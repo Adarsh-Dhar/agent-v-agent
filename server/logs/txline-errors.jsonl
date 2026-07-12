@@ -1,0 +1,17 @@
+{"kind":"fixtures","fetched_at":"2026-07-12T20:40:12.043Z","error":"Request failed with status code 403"}
+{"kind":"fixtures","fetched_at":"2026-07-12T20:42:09.905Z","error":"Request failed with status code 403"}
+{"kind":"odds","fetched_at":"2026-07-12T20:42:10.099Z","error":"Request failed with status code 404"}
+{"kind":"scores","fetched_at":"2026-07-12T20:42:10.293Z","error":"Request failed with status code 404"}
+{"kind":"proofs","fetched_at":"2026-07-12T20:42:10.617Z","error":"Request failed with status code 404"}
+{"kind":"fixtures","fetched_at":"2026-07-12T20:45:03.398Z","error":"Request failed with status code 403"}
+{"kind":"odds","fetched_at":"2026-07-12T20:45:03.748Z","error":"Request failed with status code 404"}
+{"kind":"scores","fetched_at":"2026-07-12T20:45:03.924Z","error":"Request failed with status code 404"}
+{"kind":"proofs","fetched_at":"2026-07-12T20:45:04.103Z","error":"Request failed with status code 404"}
+{"kind":"fixtures","fetched_at":"2026-07-12T20:45:23.460Z","error":"Request failed with status code 403"}
+{"kind":"odds","fetched_at":"2026-07-12T20:45:23.641Z","error":"Request failed with status code 404"}
+{"kind":"scores","fetched_at":"2026-07-12T20:45:23.821Z","error":"Request failed with status code 404"}
+{"kind":"proofs","fetched_at":"2026-07-12T20:45:24.035Z","error":"Request failed with status code 404"}
+{"kind":"fixtures","fetched_at":"2026-07-12T20:46:03.289Z","error":"Request failed with status code 403"}
+{"kind":"odds","fetched_at":"2026-07-12T20:46:03.469Z","error":"Request failed with status code 404"}
+{"kind":"scores","fetched_at":"2026-07-12T20:46:03.646Z","error":"Request failed with status code 404"}
+{"kind":"proofs","fetched_at":"2026-07-12T20:46:03.827Z","error":"Request failed with status code 404"}

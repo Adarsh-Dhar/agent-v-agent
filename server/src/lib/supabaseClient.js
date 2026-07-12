@@ -14,6 +14,8 @@ if (!url || !key) {
 
 // Service-role key is used because this is a trusted backend process
 // writing agent state, not a user-facing browser client.
+// db: { schema: 'public' } ensures we use the public schema explicitly
 export const supabase = createClient(url, key, {
   auth: { persistSession: false },
+  db: { schema: 'public' },
 });

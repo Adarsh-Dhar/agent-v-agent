@@ -69,12 +69,12 @@ async function tick(agent) {
     await updateAgent({ unrealized_pnl: unrealized });
   }
 
-  const decision = evaluateSignal(agent.config, history);
+  const decision = evaluateSignal(agent, history);
 
   if (decision.action === 'hold') return;
 
   // Exit an open position on signal-reversal exit rule
-  if (position && agent.config.exit.type === 'signal_reversal' && decision.action !== position.side) {
+  if (position && agent.exit_rule === 'signal_reversal' && decision.action !== position.side) {
     const realized = markToMarket(position.odds, snapshot.odds, position.side, position.stake);
     const newBalance = agent.balance + realized;
     const newRealizedTotal = (agent.realized_pnl ?? 0) + realized;
@@ -92,7 +92,7 @@ async function tick(agent) {
 
   // Open a new position if none is open (one position at a time, kept simple)
   if (!position) {
-    const stake = computeStake(agent.config, agent.balance, decision.confidence);
+    const stake = computeStake(agent, agent.balance, decision.confidence);
     if (stake <= 0 || stake > agent.balance) return;
 
     position = { side: decision.action, odds: snapshot.odds, stake };
@@ -108,14 +108,14 @@ async function tick(agent) {
 async function main() {
   log('starting up...');
   let agent = await loadAgent();
-  log(`loaded config: signal=${agent.config.signal.type} sizing=${agent.config.sizing.type} match=${agent.match_id} budget=${agent.budget_cap}`);
+  log(`loaded config: signal=${agent.signal_type} sizing=${agent.position_sizing} match=${agent.match_id} budget=${agent.budget_cap}`);
 
   await updateAgent({ status: 'running', pid: process.pid });
 
   const interval = setInterval(async () => {
     try {
       agent = await loadAgent(); // refresh in case budget/status changed externally
-      if (agent.status === 'stopped') {
+      if (agent.status === 'stopped' || agent.status === 'inactive') {
         log('status=stopped, shutting down.');
         clearInterval(interval);
         process.exit(0);

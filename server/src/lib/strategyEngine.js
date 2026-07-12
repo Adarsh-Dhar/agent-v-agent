@@ -1,21 +1,22 @@
 /**
- * Given a strategy config and a rolling window of odds snapshots,
+ * Given an agent with individual config columns and a rolling window of odds snapshots,
  * decide whether to buy, sell, or hold right now.
  * Returns { action: 'buy'|'sell'|'hold', reason: string, confidence: number }
  */
-export function evaluateSignal(config, history) {
+export function evaluateSignal(agent, history) {
   if (history.length < 2) return { action: 'hold', reason: 'warming_up', confidence: 0 };
 
   const latest = history[history.length - 1];
   const prev = history[history.length - 2];
   const pctChange = (latest.odds - prev.odds) / prev.odds;
 
-  const signal = config.signal.type;
+  const signal = agent.signal_type || 'odds-movement';
   let decision = { action: 'hold', reason: 'no_signal', confidence: 0 };
 
   switch (signal) {
+    case 'odds-movement':
     case 'odds_movement': {
-      const threshold = config.signal.threshold ?? 0.02; // 2% default
+      const threshold = (agent.odds_threshold ?? 5) / 100; // Convert from percentage to decimal
       if (Math.abs(pctChange) >= threshold) {
         decision = {
           action: pctChange > 0 ? 'sell' : 'buy',
@@ -26,7 +27,7 @@ export function evaluateSignal(config, history) {
       break;
     }
     case 'momentum': {
-      if (Math.abs(pctChange) >= (config.signal.threshold ?? 0.01)) {
+      if (Math.abs(pctChange) >= ((agent.odds_threshold ?? 5) / 100)) {
         decision = {
           action: pctChange > 0 ? 'buy' : 'sell', // ride the direction
           reason: `momentum:${(pctChange * 100).toFixed(1)}%`,
@@ -36,7 +37,7 @@ export function evaluateSignal(config, history) {
       break;
     }
     case 'mean_reversion': {
-      if (Math.abs(pctChange) >= (config.signal.threshold ?? 0.03)) {
+      if (Math.abs(pctChange) >= ((agent.odds_threshold ?? 5) / 100)) {
         decision = {
           action: pctChange > 0 ? 'buy' : 'sell', // bet against the swing
           reason: `mean_reversion:${(pctChange * 100).toFixed(1)}%`,
@@ -52,7 +53,7 @@ export function evaluateSignal(config, history) {
       break;
     }
     case 'time_decay': {
-      const windowStart = config.signal.window_start ?? 85;
+      const windowStart = 85;
       if (latest.minute >= windowStart) {
         decision = { action: 'buy', reason: `time_decay:min_${latest.minute}`, confidence: 0.5 };
       }
@@ -63,7 +64,7 @@ export function evaluateSignal(config, history) {
       const variance =
         recent.reduce((sum, o, i, arr) => (i === 0 ? 0 : sum + Math.abs(o - arr[i - 1])), 0) /
         recent.length;
-      if (variance >= (config.signal.threshold ?? 0.02)) {
+      if (variance >= ((agent.odds_threshold ?? 5) / 100)) {
         decision = { action: 'buy', reason: `volatility_spike:${variance.toFixed(3)}`, confidence: 0.6 };
       }
       break;
@@ -73,7 +74,7 @@ export function evaluateSignal(config, history) {
   }
 
   // Direction bias filter (long_only / short_only / bidirectional)
-  const direction = config.direction ?? 'bidirectional';
+  const direction = agent.direction_bias ?? 'bidirectional';
   if (direction === 'long_only' && decision.action === 'sell') {
     return { action: 'hold', reason: `blocked_by_direction:${direction}`, confidence: 0 };
   }
@@ -85,19 +86,20 @@ export function evaluateSignal(config, history) {
 }
 
 /**
- * Computes stake size for a trade based on the sizing config.
+ * Computes stake size for a trade based on the sizing config columns.
  */
-export function computeStake(config, balance, confidence) {
-  const sizing = config.sizing.type;
+export function computeStake(agent, balance, confidence) {
+  const sizing = agent.position_sizing || 'fixed';
   switch (sizing) {
     case 'fixed':
-      return Math.min(config.sizing.amount ?? 10, balance);
-    case 'percent_of_budget': {
-      const pct = config.sizing.percent ?? 0.1;
+      return Math.min(agent.fixed_stake ?? 100, balance);
+    case 'percent_of_budget':
+    case 'percentage': {
+      const pct = (agent.percentage_stake ?? 10) / 100; // Convert from percentage to decimal
       return Math.min(balance * pct, balance);
     }
     case 'confidence_weighted': {
-      const maxPct = config.sizing.max_percent ?? 0.2;
+      const maxPct = (agent.percentage_stake ?? 20) / 100;
       return Math.min(balance * maxPct * confidence, balance);
     }
     default:

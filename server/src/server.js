@@ -40,17 +40,35 @@ app.post('/agents', async (req, res) => {
 
   const { match_id, owner, budget_cap, config } = req.body;
 
+  // Map nested config object to individual columns
+  const agentData = {
+    name: config.name || 'Unnamed Agent',
+    description: config.description || '',
+    signal_type: config.signal?.type || 'odds-movement',
+    odds_threshold: config.signal?.threshold || 5,
+    odds_timeframe: config.signal?.timeframe || 5,
+    position_sizing: config.sizing?.type || 'fixed',
+    fixed_stake: config.sizing?.fixed_stake || 100,
+    percentage_stake: config.sizing?.percentage || 10,
+    exit_rule: config.exit?.type || 'stop-loss',
+    stop_loss: config.exit?.stop_loss || 5,
+    take_profit: config.exit?.take_profit || 15,
+    aggression: config.aggression?.type || 'instant',
+    cooldown_minutes: config.aggression?.cooldown || 2,
+    direction_bias: config.direction || 'bidirectional',
+    adaptivity_mode: config.adaptivity || 'static',
+    llm_reflection_enabled: config.adaptivity === 'llm_reflective',
+    match_id: match_id || null,
+    owner: owner || null,
+    budget_cap: budget_cap || 5000,
+    balance: budget_cap || 5000,
+    status: 'active',
+  };
+
   // 1. Insert the agent row in Supabase first, so we have an agent_id.
   const { data: agent, error } = await supabase
     .from('agents')
-    .insert({
-      match_id,
-      owner: owner ?? null,
-      budget_cap,
-      balance: budget_cap,
-      config,
-      status: 'created',
-    })
+    .insert(agentData)
     .select()
     .single();
 
