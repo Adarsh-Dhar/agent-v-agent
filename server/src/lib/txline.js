@@ -76,6 +76,11 @@ async function loadKeypair() {
   return Keypair.fromSecretKey(Uint8Array.from(secret));
 }
 
+/**
+ * One-time activation of API token using the on-chain subscription signature.
+ * This can only be called once per txSig - the returned token must be saved to .env.
+ * For runtime JWT refresh, use refreshJwt() instead.
+ */
 async function activateToken() {
   if (!TXLINE_API_ORIGIN || !TXLINE_SUBSCRIBE_TX_SIG) {
     throw new Error('TXLINE_API_ORIGIN or TXLINE_SUBSCRIBE_TX_SIG not set in .env');
@@ -104,12 +109,27 @@ async function activateToken() {
 }
 
 /**
+ * Refresh the short-lived JWT only. Does NOT call /api/token/activate.
+ * Used when JWT expires (401) but the API token is still valid.
+ */
+async function refreshJwt() {
+  if (!TXLINE_API_ORIGIN) {
+    throw new Error('TXLINE_API_ORIGIN not set in .env');
+  }
+
+  log('Refreshing JWT...');
+  const authResponse = await axios.post(`${TXLINE_API_ORIGIN}/auth/guest/start`);
+  JWT = authResponse.data.token;
+  log('JWT refreshed successfully');
+}
+
+/**
  * Generic authenticated request to TxLINE API with JWT refresh on 401.
  * Reused by fetchOddsSnapshot and logTxlineData.js.
  */
 export async function txlineRequest(endpoint) {
-  if (!TXLINE_API_ORIGIN || !TXLINE_WALLET_KEYPAIR_PATH) {
-    throw new Error('TxLINE not configured');
+  if (!TXLINE_API_TOKEN) {
+    throw new Error('TXLINE_API_TOKEN not set in .env - run `npm run activate:txline` first to activate your subscription and save the token.');
   }
 
   try {
@@ -124,12 +144,12 @@ export async function txlineRequest(endpoint) {
     const res = await axios.get(`${TXLINE_API_ORIGIN}${endpoint}`, { headers });
     return res.data;
   } catch (error) {
-    // If token expired (401), try to re-activate
-    if (error.response?.status === 401 && TXLINE_SUBSCRIBE_TX_SIG) {
-      log('Token expired, re-activating...');
+    // If JWT expired (401), refresh it and retry with same API token
+    if (error.response?.status === 401) {
+      log('JWT expired, refreshing...');
       try {
-        await activateToken();
-        // Retry with new token
+        await refreshJwt();
+        // Retry with same API token, new JWT
         const headers = {
           'X-Api-Token': TXLINE_API_TOKEN,
           'Authorization': `Bearer ${JWT}`,
@@ -137,7 +157,7 @@ export async function txlineRequest(endpoint) {
         const res = await axios.get(`${TXLINE_API_ORIGIN}${endpoint}`, { headers });
         return res.data;
       } catch (retryError) {
-        log('Re-activation failed:', retryError.message);
+        log('JWT refresh failed:', retryError.message);
         throw retryError;
       }
     }

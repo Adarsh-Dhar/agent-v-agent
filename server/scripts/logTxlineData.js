@@ -41,13 +41,13 @@ const ROOT = path.resolve(__dirname, '..');
 const LOG_DIR = path.join(ROOT, 'logs');
 
 // ---------------------------------------------------------------------------
-// Endpoint config - single place to fix paths if they don't match the real API.
+// Endpoint config - real paths from TxLINE docs (Fetching Snapshots page)
 // ---------------------------------------------------------------------------
 const ENDPOINTS = {
-  fixtures: () => '/api/v1/fixtures',
-  odds: (matchId) => `/api/v1/matches/${matchId}/odds/live`,
-  scores: (matchId) => `/api/v1/matches/${matchId}/scores/live`,
-  proofs: (matchId) => `/api/v1/matches/${matchId}/proofs`,
+  fixtures: () => '/api/fixtures/snapshot',
+  odds: (fixtureId) => `/api/odds/snapshot/${fixtureId}`,
+  scores: (fixtureId) => `/api/scores/snapshot/${fixtureId}`,
+  scoresUpdates: (fixtureId) => `/api/scores/updates/${fixtureId}`,
 };
 
 // ---------------------------------------------------------------------------
@@ -108,25 +108,49 @@ async function fetchScores(matchId) {
   return data;
 }
 
-async function fetchProofs(matchId) {
-  const data = await txlineRequest(ENDPOINTS.proofs(matchId));
-  logEntry('proofs', data);
-  return data;
+async function fetchProofs(fixtureId, scoresData) {
+  // Validation proofs require a real seq from the scores response
+  // If no scores data or no seq available, skip with a message
+  if (!scoresData) {
+    console.log('(No scores data available, skipping validation proofs)');
+    return null;
+  }
+
+  // Try to extract a seq from the scores response
+  const list = Array.isArray(scoresData) ? scoresData : scoresData?.scores || scoresData?.data || [];
+  const firstScore = list[0];
+  const seq = firstScore?.seq || firstScore?.Seq || firstScore?.sequence;
+
+  if (!seq) {
+    console.log('(No seq found in scores response, skipping validation proofs - match may not have started)');
+    return null;
+  }
+
+  try {
+    const endpoint = `/api/scores/stat-validation?fixtureId=${fixtureId}&seq=${seq}&statKey=1002`;
+    const data = await txlineRequest(endpoint);
+    logEntry('proofs', data);
+    return data;
+  } catch (err) {
+    logError('proofs', err);
+    return null;
+  }
 }
 
-/** Best-effort extraction of a usable match/fixture id from a fixtures response,
- *  since we don't know the exact response shape ahead of time. */
+/** Best-effort extraction of a usable fixture id from a fixtures response.
+ *  TxLINE uses 'FixtureId' as the field name (confirmed from docs). */
 function pickMatchId(fixturesResponse) {
   const list = Array.isArray(fixturesResponse)
     ? fixturesResponse
     : fixturesResponse?.fixtures || fixturesResponse?.data || [];
   const first = list[0];
   if (!first) return null;
-  return first.match_id || first.matchId || first.id || first.fixture_id || null;
+  return first.FixtureId || first.fixtureId || first.match_id || first.id || null;
 }
 
 async function fetchAllOnce(explicitMatchId) {
   let matchId = explicitMatchId;
+  let scoresData = null;
 
   try {
     const fixtures = await fetchFixtures();
@@ -147,16 +171,25 @@ async function fetchAllOnce(explicitMatchId) {
     return;
   }
 
-  for (const [kind, fetcher] of [
-    ['odds', () => fetchOdds(matchId)],
-    ['scores', () => fetchScores(matchId)],
-    ['proofs', () => fetchProofs(matchId)],
-  ]) {
-    try {
-      await fetcher();
-    } catch (err) {
-      logError(kind, err);
-    }
+  // Fetch odds
+  try {
+    await fetchOdds(matchId);
+  } catch (err) {
+    logError('odds', err);
+  }
+
+  // Fetch scores and use the data for proofs
+  try {
+    scoresData = await fetchScores(matchId);
+  } catch (err) {
+    logError('scores', err);
+  }
+
+  // Fetch proofs using scores data
+  try {
+    await fetchProofs(matchId, scoresData);
+  } catch (err) {
+    logError('proofs', err);
   }
 
   return matchId;
@@ -192,16 +225,27 @@ async function main() {
 
   setInterval(async () => {
     if (!matchId) return;
-    for (const [kind, fetcher] of [
-      ['odds', () => fetchOdds(matchId)],
-      ['scores', () => fetchScores(matchId)],
-      ['proofs', () => fetchProofs(matchId)],
-    ]) {
-      try {
-        await fetcher();
-      } catch (err) {
-        logError(kind, err);
-      }
+    let scoresData = null;
+
+    // Fetch odds
+    try {
+      await fetchOdds(matchId);
+    } catch (err) {
+      logError('odds', err);
+    }
+
+    // Fetch scores and use the data for proofs
+    try {
+      scoresData = await fetchScores(matchId);
+    } catch (err) {
+      logError('scores', err);
+    }
+
+    // Fetch proofs using scores data
+    try {
+      await fetchProofs(matchId, scoresData);
+    } catch (err) {
+      logError('proofs', err);
     }
   }, pollSeconds * 1000);
 }

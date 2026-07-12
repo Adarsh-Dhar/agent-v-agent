@@ -371,15 +371,15 @@ async function main() {
 
   log('Activation complete.');
 
-  // 10. Persist the durable bits into .env. The JWT is short-lived and the
-  //     token is re-derivable from the on-chain subscription, so the
-  //     server re-activates at runtime (see src/lib/txline.js) using the
-  //     saved wallet keypair rather than relying on a frozen token/JWT pair.
+  // 10. Persist the durable bits into .env. The API token is one-time-use per txSig
+  //     and cannot be re-derived, so it must be saved now. The JWT is short-lived
+  //     and can be refreshed at runtime (see src/lib/txline.js).
   updateEnvFile({
     TXLINE_NETWORK: network,
     TXLINE_API_ORIGIN: cfg.apiOrigin,
     TXLINE_WALLET_KEYPAIR_PATH: keypairPath,
     TXLINE_SUBSCRIBE_TX_SIG: txSig,
+    TXLINE_API_TOKEN: apiToken,
   });
 
   if (printToken) {
