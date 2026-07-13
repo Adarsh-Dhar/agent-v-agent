@@ -1,3 +1,15 @@
+// Maps each score_state trigger event to the direction it should open.
+// 'buy' = odds expected to shorten toward home (event favors the home side),
+// 'sell' = odds expected to lengthen toward away (event favors the away side).
+// Events with no inherent directional lean (e.g. 'penalties') are omitted on
+// purpose - runSignal treats an unmapped event as no signal rather than guessing.
+const SCORE_STATE_DIRECTION = {
+  goal_home: 'buy',
+  red_card_away: 'buy',
+  goal_away: 'sell',
+  red_card_home: 'sell',
+};
+
 /**
  * Given an agent with individual config columns and a rolling window of odds snapshots,
  * decide whether to buy, sell, or hold right now.
@@ -20,17 +32,32 @@ function runSignal(signalType, threshold, agent, history, latest, prev, pctChang
       return Math.abs(pctChange) >= threshold
         ? { action: pctChange > 0 ? 'buy' : 'sell', confidence: Math.min(1, Math.abs(pctChange) / 0.06) }
         : null;
-    case 'score_state':
-      return latest.event && (agent.score_state_triggers ?? []).includes(latest.event)
-        ? { action: 'buy', confidence: 0.7 }
-        : null;
-    case 'time_decay':
-      return latest.minute >= 85 ? { action: 'buy', confidence: 0.5 } : null;
+    case 'score_state': {
+      if (!latest.event || !(agent.score_state_triggers ?? []).includes(latest.event)) return null;
+      const direction = SCORE_STATE_DIRECTION[latest.event];
+      // Trigger fired (e.g. 'penalties') but has no directional mapping - skip
+      // rather than guess a side.
+      if (!direction) return null;
+      return { action: direction, confidence: 0.7 };
+    }
+    case 'time_decay': {
+      if (latest.minute < 85) return null;
+      // Late-match: back whichever side is currently leading to close out the
+      // result (buy = home leading, sell = away leading). A level score has
+      // no favorite to back, so no signal.
+      const diff = (latest.score?.home ?? 0) - (latest.score?.away ?? 0);
+      if (diff === 0) return null;
+      return { action: diff > 0 ? 'buy' : 'sell', confidence: 0.5 };
+    }
     case 'volatility_spike': {
       const recent = history.slice(-5).map((h) => h.odds);
       const variance =
         recent.reduce((sum, o, i, arr) => (i === 0 ? 0 : sum + Math.abs(o - arr[i - 1])), 0) / recent.length;
-      return variance >= threshold ? { action: 'buy', confidence: 0.6 } : null;
+      if (variance < threshold) return null;
+      // Trade with the direction of the move that caused the spike, i.e. a
+      // breakout continuation (same convention as 'momentum').
+      if (pctChange === 0) return null;
+      return { action: pctChange > 0 ? 'buy' : 'sell', confidence: 0.6 };
     }
     default:
       return null;
