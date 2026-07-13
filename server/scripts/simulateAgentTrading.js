@@ -38,6 +38,9 @@ const BUDGET = parseFloat(argVal('budget', '1000'));
 const SPEED = parseFloat(argVal('speed', '1')); // 1 = real time (matches runMockFeed.js), >1 = faster
 const CONFIG_PATH = argVal('config', null);
 const QUIET = args.includes('--quiet');
+// 'aggressive' (default) = highly sensitive, frequently-trading, profit-tuned configs.
+// 'random' = the original fully-randomized factor generator (kept for comparison/testing).
+const PROFILE = argVal('profile', 'aggressive');
 
 const MATCH_REAL_MS = 121 * 1000; // same total as runMockFeed.js
 const DURATION_MS = MATCH_REAL_MS; // scripted match timeline length (unaffected by playback speed)
@@ -67,6 +70,18 @@ function randomChoice(arr) {
 }
 function randomInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+// Weighted choice: pass [[value, weight], ...]. Lets a profile lean toward
+// certain options (e.g. more 'instant' than 'cooldown') without eliminating
+// the rest of the option space - that's what keeps agents individually
+// distinct instead of collapsing to one hardcoded combo.
+function weightedChoice(pairs) {
+  const total = pairs.reduce((sum, [, w]) => sum + w, 0);
+  let r = Math.random() * total;
+  for (const [value, w] of pairs) {
+    if ((r -= w) <= 0) return value;
+  }
+  return pairs[pairs.length - 1][0];
 }
 
 function generateRandomConfig() {
@@ -116,6 +131,127 @@ function generateRandomConfig() {
 
   if (aggression === 'cooldown') {
     config.cooldown_minutes = randomInt(1, 5);
+  }
+
+  return config;
+}
+
+// ---------------------------------------------------------------------------
+// Aggressive / high-frequency / profit-tuned config generator.
+//
+// Why the old random generator traded so rarely:
+//  - 'score_state' + phase_weighting='event_triggered' only ever allows a
+//    trade on the exact tick an event fires (goal/red card) - a handful of
+//    times per match at best.
+//  - direction_bias long_only/short_only silently drops half of all signals
+//    (e.g. a short_only agent can never act on a home goal).
+//  - odds_threshold of 5-10% is large relative to the feed's per-tick jitter
+//    (~1-3%), so 'odds-movement'/'momentum'/'volatility_spike' signals rarely
+//    cross the bar outside of the big event-driven odds jumps.
+//  - reentry_rule='no_reentry' (or a low capped_reentry) plus a tight
+//    max_drawdown_stop_pct means an agent can lock itself out for the rest
+//    of the match after one or two trades.
+//
+// This profile fixes all of that: it reacts to small odds moves, allows
+// both directions, re-enters continuously, and sizes stake by signal
+// confidence so it leans in harder on strong moves without over-betting on
+// weak ones.
+// ---------------------------------------------------------------------------
+function generateAggressiveConfig() {
+  // Rotate through the signal types that actually respond to odds ticks
+  // (as opposed to score_state/time_decay, which only fire a few times a
+  // match no matter how the config is tuned).
+  const ODDS_REACTIVE_SIGNALS = ['odds-movement', 'momentum', 'volatility_spike', 'mean_reversion'];
+  const signal = randomChoice(ODDS_REACTIVE_SIGNALS);
+
+  // Every factor below is randomized (weighted, not hardcoded) so agents stay
+  // individually distinct - the earlier version pinned sizing/exit/aggression/
+  // direction/phase/reentry identically for every agent, which meant "profile
+  // aggressive" agents only differed by signal_type. Weights lean toward the
+  // options that trade often and cut losers fast (that was the original
+  // intent) without collapsing the other options out of the space entirely.
+  const sizing = weightedChoice([
+    ['confidence_weighted', 5],
+    ['percent_of_budget', 3],
+    ['fixed', 2],
+  ]);
+  const exit = weightedChoice([
+    ['signal_reversal', 5],
+    ['stop-loss', 3],
+    ['time_based', 2],
+  ]);
+  const aggression = weightedChoice([
+    ['instant', 7],
+    ['cooldown', 2],
+    ['confirmation', 1],
+  ]);
+  const direction = weightedChoice([
+    ['bidirectional', 10],
+    ['long_only', 1],
+    ['short_only', 1],
+  ]);
+  const phaseWeighting = weightedChoice([
+    ['uniform', 6],
+    ['front_loaded', 2],
+    ['back_loaded', 2],
+    ['event_triggered', 0],
+  ]);
+  const reentryRule = weightedChoice([
+    ['immediate_reentry', 8],
+    ['capped_reentry', 2],
+    ['no_reentry', 0],
+  ]);
+  const maxReentries =
+    reentryRule === 'no_reentry' ? 1 : reentryRule === 'immediate_reentry' ? null : randomInt(3, 12);
+
+  const config = {
+    signal_type: signal,
+    position_sizing: sizing,
+    exit_rule: exit,
+    aggression,
+    direction_bias: direction,
+    phase_weighting: phaseWeighting,
+    reentry_rule: reentryRule,
+    max_reentries: maxReentries,
+    // Risk ceiling (L): most agents get an exposure cap and/or drawdown stop,
+    // but a slice run with no ceiling at all, so 'none' stays a real option
+    // instead of every agent always carrying both caps.
+    max_exposure_pct: Math.random() < 0.85 ? randomInt(25, 50) : null,
+    max_drawdown_stop_pct: Math.random() < 0.8 ? randomInt(25, 50) : null,
+    // Small threshold (1-4%) so it's sensitive to the feed's normal tick-to-
+    // tick jitter, not just the big event-driven jumps. Short lookback
+    // window so it reacts fast instead of waiting several minutes to confirm.
+    odds_threshold: randomInt(1, 4),
+    odds_timeframe: randomInt(1, 3),
+  };
+
+  if (sizing === 'fixed') {
+    config.fixed_stake = randomInt(80, 220);
+  } else {
+    // Used by both percent_of_budget and confidence_weighted (as a ceiling
+    // for the latter: stake = balance * percentage_stake * confidence).
+    config.percentage_stake = randomInt(12, 25);
+  }
+
+  if (exit === 'stop-loss') {
+    config.stop_loss = randomInt(3, 10);
+    config.take_profit = randomInt(10, 25);
+  }
+
+  if (aggression === 'cooldown') {
+    config.cooldown_minutes = randomInt(1, 4);
+  } else if (aggression === 'confirmation') {
+    config.confirmation_count = 2;
+  }
+
+  // A: optional secondary filter - about 1 in 7 agents require a second,
+  // different odds-reactive signal to agree with the primary before firing.
+  // These agents trade less often but with higher conviction; leaving this
+  // out entirely (as before) meant that whole factor was never exercised.
+  if (Math.random() < 0.15) {
+    const secondaryOptions = ODDS_REACTIVE_SIGNALS.filter((s) => s !== signal);
+    config.secondary_signal_type = randomChoice(secondaryOptions);
+    config.secondary_signal_threshold = randomInt(1, 4);
   }
 
   return config;
@@ -283,22 +419,39 @@ function tickAgent(agent, history, snapshot, now) {
     return;
   }
 
+  // Debug: log why signals are blocked
+  if (!agent.position && decision.action !== 'hold') {
+    log(agent, `SIGNAL ${decision.action} reason=${decision.reason} confidence=${decision.confidence.toFixed(2)}`);
+  }
+
   if (agent.position && agent.config.exit_rule === 'signal_reversal' && decision.action !== agent.position.side) {
     closePosition(agent, snapshot, decision.reason);
   }
 
   if (!agent.position) {
-    if (agent.config.max_reentries != null && agent.tradeCount >= agent.config.max_reentries) return;
+    if (agent.config.max_reentries != null && agent.tradeCount >= agent.config.max_reentries) {
+      log(agent, `BLOCKED: max_reentries reached (${agent.tradeCount}/${agent.config.max_reentries})`);
+      return;
+    }
 
     const phase = getPhaseDecision(agent, snapshot);
-    if (!phase.allow) return;
+    if (!phase.allow) {
+      log(agent, `BLOCKED: phase_weighting=${agent.config.phase_weighting} allow=false`);
+      return;
+    }
 
     const gate = passesAggressionFilter(agent, decision, now);
-    if (!gate.pass) return;
+    if (!gate.pass) {
+      log(agent, `BLOCKED: aggression=${agent.config.aggression} reason=${gate.reason}`);
+      return;
+    }
 
     let stake = computeStake(agent.config, agent.balance, decision.confidence) * phase.multiplier;
     stake = applyExposureCap(agent, stake);
-    if (stake <= 0 || stake > agent.balance) return;
+    if (stake <= 0 || stake > agent.balance) {
+      log(agent, `BLOCKED: stake=${stake.toFixed(2)} invalid (balance=${agent.balance.toFixed(2)})`);
+      return;
+    }
 
     agent.position = { side: decision.action, odds: snapshot.odds, stake, entryMinute: snapshot.minute };
     agent.lastTradeAt = now;
@@ -319,14 +472,14 @@ if (CONFIG_PATH) {
   agents = [makeAgent(config.name || 'agent-custom', config, config.budget_cap ?? BUDGET)];
 } else {
   agents = Array.from({ length: NUM_AGENTS }, (_, i) => {
-    const config = generateRandomConfig();
+    const config = PROFILE === 'random' ? generateRandomConfig() : generateAggressiveConfig();
     return makeAgent(`agent-${i + 1}:${config.signal_type}`, config, BUDGET);
   });
 }
 
 console.log('='.repeat(78));
 console.log('Agent-vs-Agent trading simulation — mock Argentina vs Switzerland feed');
-console.log(`${agents.length} agent(s) · budget=${BUDGET} each · playback speed=${SPEED}x`);
+console.log(`${agents.length} agent(s) · budget=${BUDGET} each · playback speed=${SPEED}x · profile=${PROFILE}`);
 console.log('='.repeat(78));
 agents.forEach((a) => {
   console.log(`\n${a.name}`);
