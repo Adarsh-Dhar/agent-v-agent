@@ -89,37 +89,13 @@ CREATE TABLE IF NOT EXISTS public.reflection_failures (
 CREATE INDEX IF NOT EXISTS reflection_failures_agent_id_idx ON public.reflection_failures(agent_id);
 CREATE INDEX IF NOT EXISTS reflection_failures_timestamp_idx ON public.reflection_failures(timestamp DESC);
 
--- Portfolios table for shared bankroll across agents
-CREATE TABLE IF NOT EXISTS public.portfolios (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  owner TEXT,
-  balance NUMERIC NOT NULL DEFAULT 0,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Atomic portfolio balance increment function
-CREATE OR REPLACE FUNCTION increment_portfolio_balance(p_portfolio_id UUID, p_delta NUMERIC)
-RETURNS public.portfolios AS $$
-  UPDATE public.portfolios
-  SET balance = balance + p_delta, updated_at = NOW()
-  WHERE id = p_portfolio_id
-  RETURNING *;
-$$ LANGUAGE sql VOLATILE;
-
 -- H. Match-Phase Weighting / I. Re-entry Rule / L. Risk Ceiling columns
 ALTER TABLE public.agents
 ADD COLUMN IF NOT EXISTS phase_weighting TEXT DEFAULT 'uniform',
 ADD COLUMN IF NOT EXISTS max_reentries INTEGER,
 ADD COLUMN IF NOT EXISTS reentry_rule TEXT DEFAULT 'capped_reentry',
 ADD COLUMN IF NOT EXISTS max_exposure_pct NUMERIC,
-ADD COLUMN IF NOT EXISTS max_drawdown_stop_pct NUMERIC,
-ADD COLUMN IF NOT EXISTS target_selection TEXT DEFAULT 'first_trigger',
-ADD COLUMN IF NOT EXISTS favorite_odds_threshold NUMERIC,
-ADD COLUMN IF NOT EXISTS underdog_odds_threshold NUMERIC,
-ADD COLUMN IF NOT EXISTS portfolio_behavior TEXT DEFAULT 'independent_per_match',
-ADD COLUMN IF NOT EXISTS portfolio_id UUID REFERENCES public.portfolios(id),
-ADD COLUMN IF NOT EXISTS correlation_threshold NUMERIC;
+ADD COLUMN IF NOT EXISTS max_drawdown_stop_pct NUMERIC;
 
 -- Add constraint for phase_weighting (skip if already exists)
 DO $$
@@ -146,33 +122,5 @@ BEGIN
     ALTER TABLE public.agents
     ADD CONSTRAINT check_reentry_rule
     CHECK (reentry_rule IN ('no_reentry', 'immediate_reentry', 'capped_reentry'));
-  END IF;
-END $$;
-
--- Add constraint for target_selection (skip if already exists)
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint
-    WHERE conname = 'check_target_selection'
-    AND conrelid = 'public.agents'::regclass
-  ) THEN
-    ALTER TABLE public.agents
-    ADD CONSTRAINT check_target_selection
-    CHECK (target_selection IN ('first_trigger', 'favorite_only', 'underdog_only', 'hedge_both'));
-  END IF;
-END $$;
-
--- Add constraint for portfolio_behavior (skip if already exists)
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint
-    WHERE conname = 'check_portfolio_behavior'
-    AND conrelid = 'public.agents'::regclass
-  ) THEN
-    ALTER TABLE public.agents
-    ADD CONSTRAINT check_portfolio_behavior
-    CHECK (portfolio_behavior IN ('independent_per_match', 'shared_bankroll', 'correlated_hedging'));
   END IF;
 END $$;

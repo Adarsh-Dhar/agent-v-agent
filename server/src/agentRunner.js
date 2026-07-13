@@ -69,20 +69,7 @@ function markToMarket(entryOdds, currentOdds, side, stake) {
 // Shared by all three exit rules (signal-reversal, stop-loss/take-profit, time-based).
 async function closePosition(agent, snapshot, reason) {
   const realized = markToMarket(position.odds, snapshot.odds, position.side, position.stake);
-  let newBalance;
-  if (agent.portfolio_behavior === 'shared_bankroll' && agent.portfolio_id) {
-    // Atomic increment against the shared row — avoids the read-then-write
-    // race that would otherwise lose updates when multiple agent processes
-    // close positions against the same portfolio concurrently.
-    const { data, error } = await supabase.rpc('increment_portfolio_balance', {
-      p_portfolio_id: agent.portfolio_id,
-      p_delta: realized,
-    });
-    if (error) throw new Error(`portfolio balance update failed: ${error.message}`);
-    newBalance = data.balance;
-  } else {
-    newBalance = agent.balance + realized;
-  }
+  const newBalance = agent.balance + realized;
   const newRealizedTotal = (agent.realized_pnl ?? 0) + realized;
   log(
     `CLOSE ${position.side} stake=${position.stake} pnl=${realized.toFixed(2)} -> balance=${newBalance.toFixed(2)} reason=${reason}` 
@@ -212,25 +199,6 @@ async function checkMaxDrawdownStop(agent) {
     return true;
   }
   return false;
-}
-
-// G. Target Selection: pick which side's odds stream feeds evaluateSignal().
-function selectTarget(agent, snapshot) {
-  const { home, away } = snapshot.odds;
-  const favorite = home < away ? 'home' : 'away'; // lower odds = favorite
-  const underdog = favorite === 'home' ? 'away' : 'home';
-
-  switch (agent.target_selection) {
-    case 'favorite_only':
-      return [{ side: favorite, odds: snapshot.odds[favorite] }];
-    case 'underdog_only':
-      return [{ side: underdog, odds: snapshot.odds[underdog] }];
-    case 'hedge_both':
-      return [{ side: 'home', odds: snapshot.odds.home }, { side: 'away', odds: snapshot.odds.away }];
-    case 'first_trigger':
-    default:
-      return [{ side: favorite, odds: snapshot.odds[favorite] }, { side: underdog, odds: snapshot.odds[underdog] }];
-  }
 }
 
 // K. Adaptivity: after a trade closes, let self_adjusting/llm_reflective

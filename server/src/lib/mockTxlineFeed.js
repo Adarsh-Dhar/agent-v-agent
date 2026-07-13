@@ -20,7 +20,7 @@
 // significant event associated with that keyframe (for the `score_state` signal).
 // Timeline: 1st half (0-45) -> Half time (15) -> 2nd half (45-90) -> Extra time (90-120) -> Penalties
 const KEYFRAMES = [
-  { minute: 0,   score: { home: 0, away: 0 }, odds: { home: 1.90, away: 4.20 }, cards: { yh: 0, ya: 0, rh: 0, ra: 0 }, corners: { home: 0, away: 0 }, event: null,             period: '1st_half' },
+  { minute: 0,   score: { home: 0, away: 0 }, cards: { yh: 0, ya: 0, rh: 0, ra: 0 }, corners: { home: 0, away: 0 }, event: null,             period: '1st_half' },
   { minute: 44,  score: { home: 1, away: 0 }, cards: { yh: 0, ya: 1, rh: 0, ra: 0 }, corners: { home: 2, away: 1 }, event: 'goal_home',       period: '1st_half' },
   { minute: 45,  score: { home: 1, away: 0 }, cards: { yh: 0, ya: 1, rh: 0, ra: 0 }, corners: { home: 2, away: 1 }, event: null,              period: 'half_time' },
   { minute: 60,  score: { home: 1, away: 0 }, cards: { yh: 0, ya: 1, rh: 0, ra: 0 }, corners: { home: 2, away: 1 }, event: null,              period: '2nd_half' },
@@ -139,12 +139,11 @@ export function createMockArgentinaSwitzerlandFeed(options = {}) {
     // twice in a row — this is what makes the feed look continuously "live".
     walkOffset = stepRandomWalk(walkOffset);
     const center = syntheticOddsCenter(matchMinute, kf);
-    const homeOdds = Math.max(1.02, Number((center + walkOffset).toFixed(3)));
-    const awayOdds = Math.max(1.02, Number(((1 / center) + walkOffset * 0.5).toFixed(3)));
+    const odds = Math.max(1.02, Number((center + walkOffset).toFixed(3)));
 
     return {
       match_id: 'mock-arg-vs-sui-2026',
-      odds: { home: homeOdds, away: awayOdds },
+      odds,
       score: { home: kf.score.home, away: kf.score.away },
       minute: Math.min(120, Math.round(matchMinute)), // display clock caps like most feeds do
       event,

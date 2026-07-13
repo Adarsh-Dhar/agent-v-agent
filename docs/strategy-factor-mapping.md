@@ -1,6 +1,6 @@
 # Strategy Factor Mapping: MVP vs Stretch Status
 
-## Complete Factor Inventory (A-L)
+## Complete Factor Inventory (A-F, H-I, K-L)
 
 ### A. Signal (when to buy/sell) — primary + optional secondary filter
 
@@ -90,23 +90,6 @@
 
 ---
 
-### G. Target Selection (STRETCH - NOT IN MVP)
-
-**Options**:
-1. favorite_only
-2. underdog_only
-3. first_trigger
-4. hedge_both
-
-**Database Columns**:
-- `target_selection` TEXT ❌ (stretch)
-- `favorite_odds_threshold` NUMERIC ❌ (stretch)
-- `underdog_odds_threshold` NUMERIC ❌ (stretch)
-
-**Status**: BACKLOG - Not needed for MVP single-match scenarios
-
----
-
 ### H. Match-Phase Weighting (STRETCH - NOT IN MVP)
 
 **Options**:
@@ -137,22 +120,6 @@
 - `max_trades_per_match` INTEGER ❌ (stretch)
 
 **Status**: BACKLOG - Current implementation allows unlimited re-entry
-
----
-
-### J. Portfolio Behavior (STRETCH - NOT IN MVP)
-
-**Options**:
-1. independent_per_match
-2. shared_bankroll
-3. correlated_hedging
-
-**Database Columns**:
-- `portfolio_behavior` TEXT ❌ (stretch)
-- `shared_bankroll_id` UUID ❌ (stretch)
-- `correlation_threshold` NUMERIC ❌ (stretch)
-
-**Status**: BACKLOG - Multi-match feature, not needed for single-match MVP
 
 ---
 
@@ -201,10 +168,8 @@
 | D. Aggression | ✅ Complete | 2 existing | Fully implemented |
 | E. Budget Cap | ✅ Complete | 1 existing | Fixed constraint, immutable |
 | F. Direction Bias | ✅ Complete | 1 existing | Fully implemented |
-| G. Target Selection | ❌ Stretch | 0 existing, 3 stretch | Backlog |
 | H. Match-Phase Weighting | ❌ Stretch | 0 existing, 4 stretch | Backlog |
 | I. Re-entry Rule | ❌ Stretch | 0 existing, 2 stretch | Backlog |
-| J. Portfolio Behavior | ❌ Stretch | 0 existing, 3 stretch | Backlog (multi-match) |
 | K. Adaptivity | 🔄 In Progress | 0 existing, 3 needed | Current task |
 | L. Risk Ceiling | ❌ Stretch | 0 existing, 3 stretch | Backlog |
 
@@ -221,7 +186,7 @@
 - Direction: 3 options
 - Adaptivity: 3 options (static, self-adjusting, llm_reflective)
 
-**Stretch Factors (Backlog)**: G, H, I, J, L
+**Stretch Factors (Backlog)**: H, I, L
 
 ---
 
@@ -252,10 +217,8 @@ The prompt template (`reflectiveStrategy.md`) currently covers:
 - ✅ K: Adaptivity (implicit through the reflective process itself)
 
 **Not covered in prompt** (stretch factors):
-- ❌ G: Target Selection
 - ❌ H: Match-Phase Weighting
 - ❌ I: Re-entry Rule
-- ❌ J: Portfolio Behavior
 - ❌ L: Risk Ceiling
 
 The prompt is designed to be extensible - when stretch factors are added to the schema, they can be added to the prompt template without restructuring.
