@@ -21,6 +21,8 @@ const StrategyConfigSchema = z.object({
   signal_type: z.enum(['odds-movement', 'score_state', 'mean_reversion', 'momentum', 'time_decay', 'volatility_spike']),
   odds_threshold: z.number().min(1).max(50),
   odds_timeframe: z.number().min(1).max(60),
+  secondary_signal_type: z.enum(['odds-movement', 'score_state', 'mean_reversion', 'momentum', 'time_decay', 'volatility_spike']).nullable().optional(),
+  secondary_signal_threshold: z.number().min(1).max(50).nullable().optional(),
   position_sizing: z.enum(['fixed', 'percent_of_budget', 'confidence_weighted']),
   fixed_stake: z.number().min(10).max(1000),
   percentage_stake: z.number().min(1).max(100),
@@ -57,6 +59,8 @@ function buildPrompt(currentConfig, tradeLog, performanceSummary, validationErro
   prompt = prompt.replace('{{SIGNAL_TYPE}}', currentConfig.signal_type || 'odds-movement');
   prompt = prompt.replace('{{ODDS_THRESHOLD}}', currentConfig.odds_threshold || 5);
   prompt = prompt.replace('{{ODDS_TIMEFRAME}}', currentConfig.odds_timeframe || 5);
+  prompt = prompt.replace('{{SECONDARY_SIGNAL_TYPE}}', currentConfig.secondary_signal_type || 'null');
+  prompt = prompt.replace('{{SECONDARY_SIGNAL_THRESHOLD}}', currentConfig.secondary_signal_threshold || 'null');
   prompt = prompt.replace('{{POSITION_SIZING}}', currentConfig.position_sizing || 'fixed');
   prompt = prompt.replace('{{FIXED_STAKE}}', currentConfig.fixed_stake || 100);
   prompt = prompt.replace('{{PERCENTAGE_STAKE}}', currentConfig.percentage_stake || 10);
@@ -244,6 +248,8 @@ export async function reflectOnStrategy(agentId, currentConfig, tradeLog, perfor
         signal_type: result.config.signal_type,
         odds_threshold: result.config.odds_threshold,
         odds_timeframe: result.config.odds_timeframe,
+        secondary_signal_type: result.config.secondary_signal_type,
+        secondary_signal_threshold: result.config.secondary_signal_threshold,
         position_sizing: result.config.position_sizing,
         fixed_stake: result.config.fixed_stake,
         percentage_stake: result.config.percentage_stake,

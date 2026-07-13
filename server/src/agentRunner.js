@@ -7,6 +7,7 @@ import { supabase } from './lib/supabaseClient.js';
 import { fetchOddsSnapshot } from './lib/txline.js';
 import { evaluateSignal, computeStake } from './lib/strategyEngine.js';
 import { reflectOnStrategy, shouldTriggerReflection } from './lib/llmReflection.js';
+import { selfAdjust } from './lib/selfAdjust.js';
 
 const agentId = process.argv[2];
 if (!agentId) {
@@ -68,7 +69,20 @@ function markToMarket(entryOdds, currentOdds, side, stake) {
 // Shared by all three exit rules (signal-reversal, stop-loss/take-profit, time-based).
 async function closePosition(agent, snapshot, reason) {
   const realized = markToMarket(position.odds, snapshot.odds, position.side, position.stake);
-  const newBalance = agent.balance + realized;
+  let newBalance;
+  if (agent.portfolio_behavior === 'shared_bankroll' && agent.portfolio_id) {
+    // Atomic increment against the shared row — avoids the read-then-write
+    // race that would otherwise lose updates when multiple agent processes
+    // close positions against the same portfolio concurrently.
+    const { data, error } = await supabase.rpc('increment_portfolio_balance', {
+      p_portfolio_id: agent.portfolio_id,
+      p_delta: realized,
+    });
+    if (error) throw new Error(`portfolio balance update failed: ${error.message}`);
+    newBalance = data.balance;
+  } else {
+    newBalance = agent.balance + realized;
+  }
   const newRealizedTotal = (agent.realized_pnl ?? 0) + realized;
   log(
     `CLOSE ${position.side} stake=${position.stake} pnl=${realized.toFixed(2)} -> balance=${newBalance.toFixed(2)} reason=${reason}` 
@@ -200,6 +214,25 @@ async function checkMaxDrawdownStop(agent) {
   return false;
 }
 
+// G. Target Selection: pick which side's odds stream feeds evaluateSignal().
+function selectTarget(agent, snapshot) {
+  const { home, away } = snapshot.odds;
+  const favorite = home < away ? 'home' : 'away'; // lower odds = favorite
+  const underdog = favorite === 'home' ? 'away' : 'home';
+
+  switch (agent.target_selection) {
+    case 'favorite_only':
+      return [{ side: favorite, odds: snapshot.odds[favorite] }];
+    case 'underdog_only':
+      return [{ side: underdog, odds: snapshot.odds[underdog] }];
+    case 'hedge_both':
+      return [{ side: 'home', odds: snapshot.odds.home }, { side: 'away', odds: snapshot.odds.away }];
+    case 'first_trigger':
+    default:
+      return [{ side: favorite, odds: snapshot.odds[favorite] }, { side: underdog, odds: snapshot.odds[underdog] }];
+  }
+}
+
 // K. Adaptivity: after a trade closes, let self_adjusting/llm_reflective
 // agents revise their own config based on performance so far.
 // NOTE: winning/losing trade counts and average hold time are not tracked at
@@ -208,7 +241,6 @@ async function checkMaxDrawdownStop(agent) {
 // balance) as a reasonable first pass rather than a full per-trade breakdown.
 async function maybeReflect(agent) {
   if (!agent.adaptivity_mode || agent.adaptivity_mode === 'static') return;
-  if (!agent.llm_reflection_enabled) return;
 
   const shouldReflect = await shouldTriggerReflection(agentId, agent.last_reflection_timestamp);
   if (!shouldReflect) return;
@@ -240,18 +272,40 @@ async function maybeReflect(agent) {
     max_drawdown_percent: Number(drawdownPercent.toFixed(2)),
   };
 
-  const result = await reflectOnStrategy(agentId, agent, tradeLog || [], performanceSummary);
-  if (result.success) {
-    log('adaptivity: LLM reflection applied, config updated.');
+  let result;
+  if (agent.adaptivity_mode === 'self_adjusting') {
+    result = selfAdjust(agent, tradeLog || [], performanceSummary);
+    if (result.success) {
+      await updateAgent({
+        odds_threshold: result.config.odds_threshold,
+        stop_loss: result.config.stop_loss,
+        last_reflection_timestamp: new Date().toISOString(),
+      });
+      log('adaptivity: self-adjust applied, thresholds updated.');
+    } else {
+      log(`adaptivity: self-adjust skipped: ${result.error}`);
+    }
   } else {
-    log(`adaptivity: LLM reflection skipped/failed: ${result.error}`);
+    // llm_reflective
+    if (!agent.llm_reflection_enabled) return;
+    result = await reflectOnStrategy(agentId, agent, tradeLog || [], performanceSummary);
+    if (result.success) {
+      log('adaptivity: LLM reflection applied, config updated.');
+    } else {
+      log(`adaptivity: LLM reflection skipped/failed: ${result.error}`);
+    }
   }
 }
 
 async function tick(agent) {
   const snapshot = await fetchOddsSnapshot(agent.match_id);
   history.push(snapshot);
-  if (history.length > 50) history.shift(); // keep a bounded rolling window
+  // Bound the window by *time*, not just count, so a large odds_timeframe
+  // (up to 60 min) still has enough history to diff against. At a 5s poll
+  // interval, 60 minutes = 720 ticks; cap generously above the max allowed
+  // odds_timeframe rather than a flat 50.
+  const MAX_HISTORY_TICKS = 800;
+  if (history.length > MAX_HISTORY_TICKS) history.shift();
 
   log(`odds=${snapshot.odds} minute=${snapshot.minute} event=${snapshot.event ?? '-'}`);
 

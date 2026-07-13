@@ -53,6 +53,11 @@ const FACTORS = {
     'front_loaded',
     'back_loaded',
     'event_triggered'
+  ],
+  reentry_rule: [
+    'no_reentry',
+    'immediate_reentry',
+    'capped_reentry'
   ]
 };
 
@@ -86,11 +91,14 @@ function generateRandomConfig() {
   console.log(`🔄 Adaptivity Mode: ${adaptivity}`);
 
   const phaseWeighting = randomChoice(FACTORS.phase_weighting);
+  const reentryRule = randomChoice(FACTORS.reentry_rule);
+  // Derive the numeric cap the runner actually enforces from the chosen rule.
+  const maxReentries =
+    reentryRule === 'no_reentry' ? 1 :
+    reentryRule === 'immediate_reentry' ? null :
+    randomInt(2, 10); // capped_reentry
   console.log(`⏱️  Match-Phase Weighting: ${phaseWeighting}`);
-
-  // I. Re-entry Rule: cap the number of trades this agent can open per match.
-  const maxReentries = randomInt(1, 5);
-  console.log(`♻️  Max Re-entries: ${maxReentries}`);
+  console.log(`♻️  Re-entry Rule: ${reentryRule} (max_reentries: ${maxReentries ?? 'unlimited'})`);
 
   // L. Risk Ceiling: cap any single stake, and halt entirely past a drawdown limit.
   const maxExposurePct = randomInt(20, 50);
@@ -106,6 +114,7 @@ function generateRandomConfig() {
     direction_bias: direction,
     adaptivity_mode: adaptivity,
     phase_weighting: phaseWeighting,
+    reentry_rule: reentryRule,
     max_reentries: maxReentries,
     max_exposure_pct: maxExposurePct,
     max_drawdown_stop_pct: maxDrawdownStopPct,

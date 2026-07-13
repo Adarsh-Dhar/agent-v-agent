@@ -3,74 +3,69 @@
  * decide whether to buy, sell, or hold right now.
  * Returns { action: 'buy'|'sell'|'hold', reason: string, confidence: number }
  */
+function runSignal(signalType, threshold, agent, history, latest, prev, pctChange) {
+  // Extracted so the primary and secondary signal can both call the same
+  // per-type logic without duplicating the switch statement.
+  switch (signalType) {
+    case 'odds-movement':
+    case 'odds_movement':
+      return Math.abs(pctChange) >= threshold
+        ? { action: pctChange > 0 ? 'sell' : 'buy', confidence: Math.min(1, Math.abs(pctChange) / threshold) }
+        : null;
+    case 'momentum':
+      return Math.abs(pctChange) >= threshold
+        ? { action: pctChange > 0 ? 'buy' : 'sell', confidence: Math.min(1, Math.abs(pctChange) / 0.05) }
+        : null;
+    case 'mean_reversion':
+      return Math.abs(pctChange) >= threshold
+        ? { action: pctChange > 0 ? 'buy' : 'sell', confidence: Math.min(1, Math.abs(pctChange) / 0.06) }
+        : null;
+    case 'score_state':
+      return latest.event && (agent.score_state_triggers ?? []).includes(latest.event)
+        ? { action: 'buy', confidence: 0.7 }
+        : null;
+    case 'time_decay':
+      return latest.minute >= 85 ? { action: 'buy', confidence: 0.5 } : null;
+    case 'volatility_spike': {
+      const recent = history.slice(-5).map((h) => h.odds);
+      const variance =
+        recent.reduce((sum, o, i, arr) => (i === 0 ? 0 : sum + Math.abs(o - arr[i - 1])), 0) / recent.length;
+      return variance >= threshold ? { action: 'buy', confidence: 0.6 } : null;
+    }
+    default:
+      return null;
+  }
+}
+
 export function evaluateSignal(agent, history) {
   if (history.length < 2) return { action: 'hold', reason: 'warming_up', confidence: 0 };
 
   const latest = history[history.length - 1];
-  const prev = history[history.length - 2];
+  const timeframeMin = agent.odds_timeframe ?? 5;
+  // Find the oldest snapshot that is still within the configured lookback
+  // window; fall back to the immediately preceding tick if history is too
+  // short to cover the full timeframe yet.
+  const prev =
+    [...history].reverse().find((h) => h !== latest && latest.minute - h.minute >= timeframeMin) ??
+    history[history.length - 2];
   const pctChange = (latest.odds - prev.odds) / prev.odds;
 
   const signal = agent.signal_type || 'odds-movement';
   let decision = { action: 'hold', reason: 'no_signal', confidence: 0 };
 
-  switch (signal) {
-    case 'odds-movement':
-    case 'odds_movement': {
-      const threshold = (agent.odds_threshold ?? 5) / 100; // Convert from percentage to decimal
-      if (Math.abs(pctChange) >= threshold) {
-        decision = {
-          action: pctChange > 0 ? 'sell' : 'buy',
-          reason: `odds_movement:${(pctChange * 100).toFixed(1)}%`,
-          confidence: Math.min(1, Math.abs(pctChange) / threshold),
-        };
-      }
-      break;
+  const primary = runSignal(signal, (agent.odds_threshold ?? 5) / 100, agent, history, latest, prev, pctChange);
+  decision = primary
+    ? { action: primary.action, reason: `${signal}:${(pctChange * 100).toFixed(1)}%`, confidence: primary.confidence }
+    : { action: 'hold', reason: 'no_signal', confidence: 0 };
+
+  // A. Optional secondary filter: both signals must agree on direction,
+  // otherwise the trade is suppressed even though the primary fired.
+  if (decision.action !== 'hold' && agent.secondary_signal_type) {
+    const secThreshold = (agent.secondary_signal_threshold ?? 5) / 100;
+    const secondary = runSignal(agent.secondary_signal_type, secThreshold, agent, history, latest, prev, pctChange);
+    if (!secondary || secondary.action !== decision.action) {
+      return { action: 'hold', reason: `blocked_by_secondary:${agent.secondary_signal_type}`, confidence: 0 };
     }
-    case 'momentum': {
-      if (Math.abs(pctChange) >= ((agent.odds_threshold ?? 5) / 100)) {
-        decision = {
-          action: pctChange > 0 ? 'buy' : 'sell', // ride the direction
-          reason: `momentum:${(pctChange * 100).toFixed(1)}%`,
-          confidence: Math.min(1, Math.abs(pctChange) / 0.05),
-        };
-      }
-      break;
-    }
-    case 'mean_reversion': {
-      if (Math.abs(pctChange) >= ((agent.odds_threshold ?? 5) / 100)) {
-        decision = {
-          action: pctChange > 0 ? 'buy' : 'sell', // bet against the swing
-          reason: `mean_reversion:${(pctChange * 100).toFixed(1)}%`,
-          confidence: Math.min(1, Math.abs(pctChange) / 0.06),
-        };
-      }
-      break;
-    }
-    case 'score_state': {
-      if (latest.event) {
-        decision = { action: 'buy', reason: `score_state:${latest.event}`, confidence: 0.7 };
-      }
-      break;
-    }
-    case 'time_decay': {
-      const windowStart = 85;
-      if (latest.minute >= windowStart) {
-        decision = { action: 'buy', reason: `time_decay:min_${latest.minute}`, confidence: 0.5 };
-      }
-      break;
-    }
-    case 'volatility_spike': {
-      const recent = history.slice(-5).map((h) => h.odds);
-      const variance =
-        recent.reduce((sum, o, i, arr) => (i === 0 ? 0 : sum + Math.abs(o - arr[i - 1])), 0) /
-        recent.length;
-      if (variance >= ((agent.odds_threshold ?? 5) / 100)) {
-        decision = { action: 'buy', reason: `volatility_spike:${variance.toFixed(3)}`, confidence: 0.6 };
-      }
-      break;
-    }
-    default:
-      decision = { action: 'hold', reason: 'unknown_signal', confidence: 0 };
   }
 
   // Direction bias filter (long_only / short_only / bidirectional)
