@@ -9,7 +9,8 @@
     "dev": "node --watch src/server.js",
     "log:txline": "node scripts/logTxlineData.js",
     "activate:txline": "node scripts/activateTxline.js",
-    "discover:txline": "node scripts/discoverTxlineEndpoints.js"
+    "discover:txline": "node scripts/discoverTxlineEndpoints.js",
+    "agent:create": "node scripts/createRandomAgent.js"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.32.1",
