@@ -27,8 +27,8 @@ export function validateAgentConfig(body) {
     errors.push('match_id is required (string) - the TxLINE match identifier.');
   }
 
-  if (typeof body.budget_cap !== 'number' || body.budget_cap <= 0) {
-    errors.push('budget_cap is required and must be a positive number.');
+  if (body.budget_cap !== undefined && (typeof body.budget_cap !== 'number' || body.budget_cap <= 0)) {
+    errors.push('budget_cap must be a positive number if provided.');
   }
 
   const cfg = body.config || {};
@@ -41,19 +41,19 @@ export function validateAgentConfig(body) {
   const direction = cfg.direction || body.direction_bias;
   const adaptivity = body.adaptivity_mode || cfg.adaptivity;
 
-  if (!signalType || !SIGNALS.includes(signalType)) {
+  if (signalType && !SIGNALS.includes(signalType)) {
     errors.push(`signal_type must be one of: ${SIGNALS.join(', ')}`);
   }
 
-  if (!sizingType || !SIZING.includes(sizingType)) {
+  if (sizingType && !SIZING.includes(sizingType)) {
     errors.push(`position_sizing must be one of: ${SIZING.join(', ')}`);
   }
 
-  if (!exitType || !EXIT.includes(exitType)) {
+  if (exitType && !EXIT.includes(exitType)) {
     errors.push(`exit_rule must be one of: ${EXIT.join(', ')}`);
   }
 
-  if (!aggressionType || !AGGRESSION.includes(aggressionType)) {
+  if (aggressionType && !AGGRESSION.includes(aggressionType)) {
     errors.push(`aggression must be one of: ${AGGRESSION.join(', ')}`);
   }
 

@@ -91,6 +91,55 @@ it sees `stopped`.
 | `config.aggression.type` | `instant`, `confirmation`, `cooldown` |
 | `config.direction` | `long_only`, `short_only`, `bidirectional` |
 
+## Match Replay System
+
+The system supports replaying historical matches for testing and backtesting. This is useful when you want to test strategies against real match data without waiting for live events.
+
+### Building a Replay Fixture
+
+First, build a replay fixture from raw TxLINE score logs:
+
+```bash
+node scripts/buildReplayFixture.js --fixture-id 18222446 --log logs/txline-scores-2026-07-12.jsonl --home Argentina --away Switzerland
+```
+
+This parses the raw JSONL score logs, dedupes/diffs the score deltas, and writes a clean ordered timeline to `src/lib/replays/18222446.json`.
+
+### Running an Agent with Replay Data
+
+To run an agent against replay data, use a replay match ID (format: `replay-{fixture-id}`):
+
+```bash
+curl -X POST http://localhost:3000/agents \
+  -H "Content-Type: application/json" \
+  -d '{
+    "match_id": "replay-18222446",
+    "owner": "alice",
+    "budget_cap": 500,
+    "config": {
+      "signal": { "type": "score_state" },
+      "sizing": { "type": "percent_of_budget", "percent": 0.1 },
+      "exit": { "type": "signal_reversal" },
+      "aggression": { "type": "instant" },
+      "direction": "bidirectional"
+    }
+  }'
+```
+
+### How Replay Works
+
+- The replay engine (`src/lib/txlineReplay.js`) advances through the timeline every 8 seconds (configurable)
+- Each call to `fetchOddsSnapshot()` returns the next event in the timeline
+- Since the real odds feed was empty for the historical data, the system synthesizes plausible odds based on the live score state
+- The replay holds at the final state when the match ends
+- Goals, cards, and period transitions all replay in the correct order
+
+### Caveats
+
+- Replay odds are synthesized from score state, not historical odds data
+- The replay timeline is built from score deltas - if the original log had gaps, the timeline may not be perfectly smooth
+- Replay state is held in memory per match - restart the server to reset replay state
+
 ## Notes / what to adjust before the hackathon demo
 
 - `src/lib/txline.js` guesses at TxLINE's response shape (`odds`, `score`,

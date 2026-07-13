@@ -17,6 +17,8 @@ import {
   TOKEN_2022_PROGRAM_ID,
   getAssociatedTokenAddressSync,
 } from '@solana/spl-token';
+import { isReplayMatch, fetchReplaySnapshot } from './txlineReplay.js';
+import { createMockArgentinaSwitzerlandFeed } from './mockTxlineFeed.js';
 
 dotenv.config();
 
@@ -43,7 +45,7 @@ const NETWORK_CONFIG = {
 // Simple in-memory mock so you can run/demo the whole pipeline before wiring
 // real TxLINE credentials. Odds random-walk around a starting value.
 let mockOdds = 1.9;
-function mockTick() {
+function plainRandomWalkTick() {
   const drift = (Math.random() - 0.5) * 0.08;
   mockOdds = Math.max(1.05, mockOdds + drift);
   return {
@@ -54,6 +56,16 @@ function mockTick() {
     event: null,
     timestamp: new Date().toISOString(),
   };
+}
+
+// Scripted mock feed support
+let scriptedMockTick = null;
+function mockTick() {
+  if (process.env.TXLINE_MOCK_DATASET === 'arg-vs-sui') {
+    if (!scriptedMockTick) scriptedMockTick = createMockArgentinaSwitzerlandFeed();
+    return scriptedMockTick();
+  }
+  return plainRandomWalkTick();
 }
 
 function log(...msg) {
@@ -167,10 +179,21 @@ export async function txlineRequest(endpoint) {
 
 /**
  * Fetches the latest odds snapshot for a match from TxLINE.
+ * Routes to replay engine for replay matches (format: replay-{fixture-id}).
  * Falls back to a mock random-walk feed if no API credentials are configured,
  * so the agent runner can be demoed end-to-end without live credentials.
  */
 export async function fetchOddsSnapshot(matchId) {
+  // Check if this is a replay match
+  if (isReplayMatch(matchId)) {
+    return fetchReplaySnapshot(matchId);
+  }
+
+  // Use mock feed if TXLINE_MOCK_DATASET is set (regardless of API credentials)
+  if (process.env.TXLINE_MOCK_DATASET) {
+    return mockTick();
+  }
+
   // Fallback to mock if credentials not configured
   if (!TXLINE_API_ORIGIN || !TXLINE_WALLET_KEYPAIR_PATH) {
     return mockTick();
