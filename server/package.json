@@ -11,7 +11,8 @@
     "activate:txline": "node scripts/activateTxline.js",
     "discover:txline": "node scripts/discoverTxlineEndpoints.js",
     "agent:create": "node scripts/createRandomAgent.js",
-    "agent:simulate": "node scripts/simulateAgentTrading.js"
+    "agent:simulate": "node scripts/simulateAgentTrading.js",
+    "agent:sample": "node scripts/createSampleAgent.js"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.32.1",

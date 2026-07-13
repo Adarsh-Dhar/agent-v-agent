@@ -97,6 +97,62 @@ ADD COLUMN IF NOT EXISTS reentry_rule TEXT DEFAULT 'capped_reentry',
 ADD COLUMN IF NOT EXISTS max_exposure_pct NUMERIC,
 ADD COLUMN IF NOT EXISTS max_drawdown_stop_pct NUMERIC;
 
+-- G. Target Selection column
+ALTER TABLE public.agents
+ADD COLUMN IF NOT EXISTS target_selection TEXT DEFAULT 'both';
+
+-- J. Portfolio Behavior column
+ALTER TABLE public.agents
+ADD COLUMN IF NOT EXISTS portfolio_behavior TEXT DEFAULT 'independent';
+
+-- Additional signal parameters for A. Signal
+ALTER TABLE public.agents
+ADD COLUMN IF NOT EXISTS volatility_threshold NUMERIC,
+ADD COLUMN IF NOT EXISTS volatility_timeframe INTEGER,
+ADD COLUMN IF NOT EXISTS mean_reversion_threshold NUMERIC,
+ADD COLUMN IF NOT EXISTS momentum_threshold NUMERIC,
+ADD COLUMN IF NOT EXISTS time_decay_start INTEGER,
+ADD COLUMN IF NOT EXISTS time_decay_end INTEGER;
+
+-- Additional position sizing parameter for B. Position Sizing
+ALTER TABLE public.agents
+ADD COLUMN IF NOT EXISTS confidence_weighted BOOLEAN DEFAULT false;
+
+-- Additional exit rule parameter for C. Exit Rule
+ALTER TABLE public.agents
+ADD COLUMN IF NOT EXISTS time_based_exit_time TEXT;
+
+-- Additional aggression parameter for D. Aggression
+ALTER TABLE public.agents
+ADD COLUMN IF NOT EXISTS confirmation_threshold INTEGER DEFAULT 2;
+
+-- Add constraints for new columns (skip if already exists)
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'check_target_selection'
+    AND conrelid = 'public.agents'::regclass
+  ) THEN
+    ALTER TABLE public.agents
+    ADD CONSTRAINT check_target_selection
+    CHECK (target_selection IN ('favorite_only', 'underdog_only', 'first_trigger', 'both'));
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'check_portfolio_behavior'
+    AND conrelid = 'public.agents'::regclass
+  ) THEN
+    ALTER TABLE public.agents
+    ADD CONSTRAINT check_portfolio_behavior
+    CHECK (portfolio_behavior IN ('independent', 'independent_per_match', 'shared_bankroll', 'correlated_hedging'));
+  END IF;
+END $$;
+
 -- Add constraint for phase_weighting (skip if already exists)
 DO $$
 BEGIN

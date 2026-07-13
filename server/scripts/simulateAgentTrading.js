@@ -285,6 +285,7 @@ function makeAgent(name, config, budget) {
     peakBalance: budget,
     maxDrawdownPct: 0,
     halted: false,
+    maxReentriesWarned: false,
   };
 }
 
@@ -420,7 +421,7 @@ function tickAgent(agent, history, snapshot, now) {
   }
 
   // Debug: log why signals are blocked
-  if (!agent.position && decision.action !== 'hold') {
+  if (!agent.position && decision.action !== 'hold' && !agent.maxReentriesWarned) {
     log(agent, `SIGNAL ${decision.action} reason=${decision.reason} confidence=${decision.confidence.toFixed(2)}`);
   }
 
@@ -430,7 +431,10 @@ function tickAgent(agent, history, snapshot, now) {
 
   if (!agent.position) {
     if (agent.config.max_reentries != null && agent.tradeCount >= agent.config.max_reentries) {
-      log(agent, `BLOCKED: max_reentries reached (${agent.tradeCount}/${agent.config.max_reentries})`);
+      if (!agent.maxReentriesWarned) {
+        log(agent, `BLOCKED: max_reentries reached (${agent.tradeCount}/${agent.config.max_reentries}) - will not log further signals`);
+        agent.maxReentriesWarned = true;
+      }
       return;
     }
 
