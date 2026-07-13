@@ -85,3 +85,24 @@ CREATE TABLE IF NOT EXISTS public.reflection_failures (
 -- Create indexes for reflection failures
 CREATE INDEX IF NOT EXISTS reflection_failures_agent_id_idx ON public.reflection_failures(agent_id);
 CREATE INDEX IF NOT EXISTS reflection_failures_timestamp_idx ON public.reflection_failures(timestamp DESC);
+
+-- H. Match-Phase Weighting / I. Re-entry Rule / L. Risk Ceiling columns
+ALTER TABLE public.agents
+ADD COLUMN IF NOT EXISTS phase_weighting TEXT DEFAULT 'uniform',
+ADD COLUMN IF NOT EXISTS max_reentries INTEGER,
+ADD COLUMN IF NOT EXISTS max_exposure_pct NUMERIC,
+ADD COLUMN IF NOT EXISTS max_drawdown_stop_pct NUMERIC;
+
+-- Add constraint for phase_weighting (skip if already exists)
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'check_phase_weighting'
+    AND conrelid = 'public.agents'::regclass
+  ) THEN
+    ALTER TABLE public.agents
+    ADD CONSTRAINT check_phase_weighting
+    CHECK (phase_weighting IN ('uniform', 'front_loaded', 'back_loaded', 'event_triggered'));
+  END IF;
+END $$;

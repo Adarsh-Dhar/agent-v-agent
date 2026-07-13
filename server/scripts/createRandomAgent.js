@@ -47,6 +47,12 @@ const FACTORS = {
     'static',
     'self_adjusting',
     'llm_reflective'
+  ],
+  phase_weighting: [
+    'uniform',
+    'front_loaded',
+    'back_loaded',
+    'event_triggered'
   ]
 };
 
@@ -79,6 +85,19 @@ function generateRandomConfig() {
   const adaptivity = randomChoice(FACTORS.adaptivity_mode);
   console.log(`🔄 Adaptivity Mode: ${adaptivity}`);
 
+  const phaseWeighting = randomChoice(FACTORS.phase_weighting);
+  console.log(`⏱️  Match-Phase Weighting: ${phaseWeighting}`);
+
+  // I. Re-entry Rule: cap the number of trades this agent can open per match.
+  const maxReentries = randomInt(1, 5);
+  console.log(`♻️  Max Re-entries: ${maxReentries}`);
+
+  // L. Risk Ceiling: cap any single stake, and halt entirely past a drawdown limit.
+  const maxExposurePct = randomInt(20, 50);
+  const maxDrawdownStopPct = randomInt(15, 40);
+  console.log(`🛑 Max Exposure: ${maxExposurePct}% of balance per trade`);
+  console.log(`🛑 Max Drawdown Stop: ${maxDrawdownStopPct}%`);
+
   const config = {
     signal_type: signal,
     position_sizing: sizing,
@@ -86,6 +105,10 @@ function generateRandomConfig() {
     aggression: aggression,
     direction_bias: direction,
     adaptivity_mode: adaptivity,
+    phase_weighting: phaseWeighting,
+    max_reentries: maxReentries,
+    max_exposure_pct: maxExposurePct,
+    max_drawdown_stop_pct: maxDrawdownStopPct,
   };
 
   // Add signal-specific parameters
