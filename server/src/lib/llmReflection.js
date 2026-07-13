@@ -141,7 +141,16 @@ function validateBusinessRules(previousConfig, proposedConfig, performanceSummar
     errors.push('Budget cap cannot be modified by LLM');
   }
 
-  // 2. Conservative change limit (<50%)
+  // 2. Strategy factor is locked at agent creation. The reflection's job is
+  // profit-maximizing parameter tuning within that factor, not switching it.
+  const lockedFields = ['signal_type', 'position_sizing', 'exit_rule', 'aggression', 'direction_bias'];
+  for (const field of lockedFields) {
+    if (proposedConfig[field] !== undefined && previousConfig[field] !== undefined && proposedConfig[field] !== previousConfig[field]) {
+      errors.push(`${field} is a locked strategy factor and cannot be changed (was '${previousConfig[field]}', got '${proposedConfig[field]}')`);
+    }
+  }
+
+  // 3. Conservative change limit (<50%)
   const numericFields = ['odds_threshold', 'fixed_stake', 'percentage_stake', 'stop_loss', 'take_profit', 'cooldown_minutes'];
   for (const field of numericFields) {
     if (proposedConfig[field] !== undefined && previousConfig[field] !== undefined) {
@@ -152,7 +161,7 @@ function validateBusinessRules(previousConfig, proposedConfig, performanceSummar
     }
   }
 
-  // 3. Justification grounding (basic check - just ensure justifications exist)
+  // 4. Justification grounding (basic check - just ensure justifications exist)
   if (!proposedConfig.justification) {
     errors.push('Missing justification object');
   } else {
@@ -174,7 +183,7 @@ async function logReflectionFailure(agentId, validationLayer, errorMessage, retr
   try {
     await supabase.from('reflection_failures').insert({
       agent_id: agentId,
-      validation_layer,
+      validation_layer: validationLayer,
       error_message: errorMessage,
       retry_attempt: retryAttempt,
       llm_output: llmOutput,
