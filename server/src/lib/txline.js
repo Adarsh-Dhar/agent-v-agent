@@ -178,12 +178,50 @@ export async function txlineRequest(endpoint) {
 }
 
 /**
+ * Market Focus resolver: given a raw TxLINE odds payload (or a mock snapshot
+ * shaped like one) and an agent's market_focus/ah_line_band/ou_line_band,
+ * pick the right price out of it.
+ * [FEED-SHAPE TBD]: real TxLINE responses may expose `data.markets` /
+ * `data.superOdds` (name TBD pending API docs) as an array of
+ * { type: '1x2'|'asian_handicap'|'over_under', line, homeOdds, awayOdds, ... }.
+ * Until that shape is confirmed against a live response, this falls back to
+ * the single `data.odds` field for every market_focus value except when the
+ * array is present, in which case it filters by type + line band.
+ */
+function resolveMarketOdds(data, agent) {
+  const marketFocus = agent.market_focus || '1x2';
+  const markets = data.markets || data.superOdds; // name TBD, see note above
+  if (!Array.isArray(markets) || markets.length === 0) {
+    return data.odds || data.price || 1.9; // no multi-market data available, fall back
+  }
+  if (marketFocus === '1x2') {
+    return markets.find((m) => m.type === '1x2')?.price ?? data.odds ?? 1.9;
+  }
+  if (marketFocus === 'asian_handicap') {
+    const band = agent.ah_line_band || 'tight';
+    const candidates = markets.filter((m) => m.type === 'asian_handicap');
+    const sorted = [...candidates].sort((a, b) => Math.abs(a.line) - Math.abs(b.line));
+    const pick = band === 'tight' ? sorted[0] : sorted[sorted.length - 1];
+    return pick?.price ?? data.odds ?? 1.9;
+  }
+  if (marketFocus === 'over_under') {
+    const band = agent.ou_line_band || 'mid';
+    const candidates = markets.filter((m) => m.type === 'over_under');
+    const sorted = [...candidates].sort((a, b) => a.line - b.line);
+    const idx = band === 'low' ? 0 : band === 'high' ? sorted.length - 1 : Math.floor(sorted.length / 2);
+    return sorted[idx]?.price ?? data.odds ?? 1.9;
+  }
+  // multi_market: return the full array; strategyEngine decides per-tick which to act on.
+  return markets;
+}
+
+/**
  * Fetches the latest odds snapshot for a match from TxLINE.
  * Routes to replay engine for replay matches (format: replay-{fixture-id}).
  * Falls back to a mock random-walk feed if no API credentials are configured,
  * so the agent runner can be demoed end-to-end without live credentials.
  */
-export async function fetchOddsSnapshot(matchId) {
+export async function fetchOddsSnapshot(matchId, agent = {}) {
   // Check if this is a replay match
   if (isReplayMatch(matchId)) {
     return fetchReplaySnapshot(matchId);
@@ -203,7 +241,7 @@ export async function fetchOddsSnapshot(matchId) {
     const data = await txlineRequest(`/api/v1/matches/${matchId}/odds/live`);
     return {
       match_id: matchId,
-      odds: data.odds || data.price || 1.9,
+      odds: resolveMarketOdds(data, agent),
       score: data.score || { home: 0, away: 0 },
       minute: data.minute || 0,
       event: data.event || null,

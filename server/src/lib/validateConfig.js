@@ -1,12 +1,16 @@
 // Allowed values for each building block, mirroring the design doc (A-L).
-const SIGNALS = [
-  'odds-movement',
-  'odds_movement',
-  'score_state',
-  'mean_reversion',
-  'momentum',
-  'time_decay',
-  'volatility_spike',
+const MARKET_FOCUS = ['1x2', 'asian_handicap', 'over_under', 'multi_market'];
+const AH_LINE_BAND = ['tight', 'deep'];
+const OU_LINE_BAND = ['low', 'mid', 'high'];
+const DECISION_STYLE = ['anticipatory', 'confirmatory', 'balanced'];
+const CONFIRMATION_TOLERANCE = ['aggressive', 'conservative', 'adaptive'];
+const SCORE_STATE_MODE = ['favor_chasing', 'favor_leading', 'momentum_only'];
+const SIDE_BIAS = ['home', 'away', 'favorite', 'underdog', 'none'];
+const RISK_PROFILE = ['conservative', 'aggressive', 'martingale', 'flat_stake'];
+const WILDCARD_TRAIT = [
+  'none', 'chaos_agent', 'comeback_romantic', 'revenge_trader', 'superstition',
+  'weather_prophet', 'rivalry_rage', 'bandwagon', 'contrarian',
+  'last_minute_believer', 'nostalgia_trader',
 ];
 
 const SIZING = ['fixed', 'percent_of_budget', 'percentage', 'confidence_weighted'];
@@ -14,7 +18,7 @@ const EXIT = ['stop_loss_take_profit', 'stop-loss', 'time_based', 'signal_revers
 const AGGRESSION = ['instant', 'confirmation', 'cooldown'];
 const DIRECTION = ['long_only', 'short_only', 'bidirectional'];
 const TARGET_SELECTION = ['favorite_only', 'underdog_only', 'first_trigger', 'both'];
-const PHASE_WEIGHTING = ['uniform', 'front_loaded', 'back_loaded', 'event_triggered'];
+const PHASE_WEIGHTING = ['early', 'pre_halftime', 'second_half', 'late_stoppage', 'full_match'];
 const REENTRY_RULE = ['no_reentry', 'immediate_reentry', 'capped_reentry'];
 const PORTFOLIO_BEHAVIOR = ['independent', 'shared_bankroll', 'correlated_hedging'];
 const ADAPTIVITY = ['static', 'self_adjusting', 'llm_reflective'];
@@ -30,7 +34,15 @@ export function validateAgentConfig(body) {
   const cfg = body.config || {};
 
   // Support both nested config and direct body properties
-  const signalType = cfg.signal?.type || body.signal_type;
+  const marketFocus = cfg.market_focus || body.market_focus;
+  const ahLineBand = cfg.ah_line_band || body.ah_line_band;
+  const ouLineBand = cfg.ou_line_band || body.ou_line_band;
+  const decisionStyle = cfg.decision_style || body.decision_style;
+  const confirmationTolerance = cfg.confirmation_tolerance || body.confirmation_tolerance;
+  const scoreStateMode = cfg.score_state_mode || body.score_state_mode;
+  const sideBias = cfg.side_bias || body.side_bias;
+  const riskProfile = cfg.risk_profile || body.risk_profile;
+  const wildcardTrait = cfg.wildcard_trait || body.wildcard_trait;
   const sizingType = cfg.sizing?.type || body.position_sizing;
   const exitType = cfg.exit?.type || body.exit_rule;
   const aggressionType = cfg.aggression?.type || body.aggression;
@@ -41,8 +53,32 @@ export function validateAgentConfig(body) {
   const portfolioBehavior = cfg.portfolio_behavior || body.portfolio_behavior;
   const adaptivity = body.adaptivity_mode || cfg.adaptivity;
 
-  if (signalType && !SIGNALS.includes(signalType)) {
-    errors.push(`signal_type must be one of: ${SIGNALS.join(', ')}`);
+  if (marketFocus && !MARKET_FOCUS.includes(marketFocus)) {
+    errors.push(`market_focus must be one of: ${MARKET_FOCUS.join(', ')}`);
+  }
+  if (marketFocus === 'asian_handicap' && ahLineBand && !AH_LINE_BAND.includes(ahLineBand)) {
+    errors.push(`ah_line_band must be one of: ${AH_LINE_BAND.join(', ')}`);
+  }
+  if (marketFocus === 'over_under' && ouLineBand && !OU_LINE_BAND.includes(ouLineBand)) {
+    errors.push(`ou_line_band must be one of: ${OU_LINE_BAND.join(', ')}`);
+  }
+  if (decisionStyle && !DECISION_STYLE.includes(decisionStyle)) {
+    errors.push(`decision_style must be one of: ${DECISION_STYLE.join(', ')}`);
+  }
+  if (confirmationTolerance && !CONFIRMATION_TOLERANCE.includes(confirmationTolerance)) {
+    errors.push(`confirmation_tolerance must be one of: ${CONFIRMATION_TOLERANCE.join(', ')}`);
+  }
+  if (scoreStateMode && !SCORE_STATE_MODE.includes(scoreStateMode)) {
+    errors.push(`score_state_mode must be one of: ${SCORE_STATE_MODE.join(', ')}`);
+  }
+  if (sideBias && !SIDE_BIAS.includes(sideBias)) {
+    errors.push(`side_bias must be one of: ${SIDE_BIAS.join(', ')}`);
+  }
+  if (riskProfile && !RISK_PROFILE.includes(riskProfile)) {
+    errors.push(`risk_profile must be one of: ${RISK_PROFILE.join(', ')}`);
+  }
+  if (wildcardTrait && !WILDCARD_TRAIT.includes(wildcardTrait)) {
+    errors.push(`wildcard_trait must be one of: ${WILDCARD_TRAIT.join(', ')}`);
   }
 
   if (sizingType && !SIZING.includes(sizingType)) {
@@ -82,18 +118,6 @@ export function validateAgentConfig(body) {
   }
 
   // Validate numeric ranges
-  if (body.odds_threshold !== undefined) {
-    if (typeof body.odds_threshold !== 'number' || body.odds_threshold < 1 || body.odds_threshold > 50) {
-      errors.push('odds_threshold must be a number between 1 and 50');
-    }
-  }
-
-  if (body.odds_timeframe !== undefined) {
-    if (typeof body.odds_timeframe !== 'number' || body.odds_timeframe < 1 || body.odds_timeframe > 60) {
-      errors.push('odds_timeframe must be a number between 1 and 60');
-    }
-  }
-
   if (body.fixed_stake !== undefined) {
     if (typeof body.fixed_stake !== 'number' || body.fixed_stake < 10 || body.fixed_stake > 1000) {
       errors.push('fixed_stake must be a number between 10 and 1000');
@@ -131,21 +155,10 @@ export function validateAgentConfig(body) {
     }
   }
 
-  if (body.volatility_threshold !== undefined) {
-    if (typeof body.volatility_threshold !== 'number' || body.volatility_threshold < 0 || body.volatility_threshold > 100) {
-      errors.push('volatility_threshold must be a number between 0 and 100');
-    }
-  }
-
-  if (body.mean_reversion_threshold !== undefined) {
-    if (typeof body.mean_reversion_threshold !== 'number' || body.mean_reversion_threshold < 0 || body.mean_reversion_threshold > 50) {
-      errors.push('mean_reversion_threshold must be a number between 0 and 50');
-    }
-  }
-
-  if (body.momentum_threshold !== undefined) {
-    if (typeof body.momentum_threshold !== 'number' || body.momentum_threshold < 0 || body.momentum_threshold > 50) {
-      errors.push('momentum_threshold must be a number between 0 and 50');
+  // Reaction Latency: Instant (0) / Fast (2000-5000ms) / Delayed (15000-30000ms) — validate as a single bounded field.
+  if (body.reaction_latency_ms !== undefined) {
+    if (typeof body.reaction_latency_ms !== 'number' || body.reaction_latency_ms < 0 || body.reaction_latency_ms > 30000) {
+      errors.push('reaction_latency_ms must be a number between 0 and 30000');
     }
   }
 

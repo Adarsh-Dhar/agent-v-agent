@@ -1,224 +1,228 @@
-# Strategy Factor Mapping: MVP vs Stretch Status
+# Strategy Factor Mapping: 10-Factor Config
 
-## Complete Factor Inventory (A-F, H-I, K-L)
+## Complete Factor Inventory
 
-### A. Signal (when to buy/sell) — primary + optional secondary filter
+### 1. Market Focus
 
-**Current MVP Schema**: ✅ PARTIALLY IMPLEMENTED
-- `signal_type`: odds-movement, score_state, mean_reversion, momentum, time_decay, volatility_spike
-- `odds_threshold`: numeric (1-50)
-- `odds_timeframe`: numeric (1-60)
-
-**Missing from MVP**:
-- Secondary signal filter (not yet implemented)
-- Signal-specific parameters (e.g., window_start for time_decay)
+**Current Schema**: ⚠️ PARTIAL ([FEED-SHAPE TBD])
+- `market_focus`: 1x2, asian_handicap, over_under, multi_market
+- `ah_line_band`: tight, deep (only used when market_focus = 'asian_handicap')
+- `ou_line_band`: low, mid, high (only used when market_focus = 'over_under')
 
 **Database Columns**:
-- `signal_type` TEXT ✅
-- `odds_threshold` NUMERIC ✅
-- `odds_timeframe` INTEGER ✅
-- `secondary_signal_type` TEXT ❌ (stretch)
-- `secondary_signal_threshold` NUMERIC ❌ (stretch)
+- `market_focus` TEXT ✅
+- `ah_line_band` TEXT ✅
+- `ou_line_band` TEXT ✅
+
+**Notes**: 
+- Currently degrades to single-odds fallback since TxLINE feed shape not yet confirmed
+- Real multi-market odds array (`data.markets` / `data.superOdds`) pending API documentation
+- Once feed exposes multi-market structure, `resolveMarketOdds()` in `txline.js` will filter by type + line band
 
 ---
 
-### B. Position Sizing
+### 2. Decision Style
 
-**Current MVP Schema**: ✅ PARTIALLY IMPLEMENTED
-- `position_sizing`: fixed, percent_of_budget, confidence_weighted
-- `fixed_stake`: numeric (10-1000)
-- `percentage_stake`: numeric (1-100)
+**Current Schema**: ✅ FULLY IMPLEMENTED
+- `decision_style`: anticipatory, confirmatory, balanced
 
 **Database Columns**:
-- `position_sizing` TEXT ✅
-- `fixed_stake` NUMERIC ✅
-- `percentage_stake` NUMERIC ✅
+- `decision_style` TEXT ✅
+
+**Notes**:
+- Anticipatory fires on pre-goal buildup events (red cards) before VAR confirmation
+- Confirmatory waits for confirmed events (goals, VAR'd cards, penalties)
+- Balanced requires both readings to agree on direction before firing
+- [FEED-SHAPE TBD]: Currently keys off same `latest.event` field; true possession/shot stream pending feed upgrade
 
 ---
 
-### C. Exit Rule
+### 3. Confirmation Tolerance
 
-**Current MVP Schema**: ✅ PARTIALLY IMPLEMENTED
-- `exit_rule`: stop_loss_take_profit, time_based, signal_reversal
-- `stop_loss`: numeric (1-50)
-- `take_profit`: numeric (1-50)
-
-**Missing from MVP**:
-- Time-based exit parameters (halftime, fulltime, custom minutes)
-- Exit trigger conditions
+**Current Schema**: ✅ VALIDATED (not yet wired)
+- `confirmation_tolerance`: aggressive, conservative, adaptive
 
 **Database Columns**:
-- `exit_rule` TEXT ✅
-- `stop_loss` NUMERIC ✅
-- `take_profit` NUMERIC ✅
-- `time_based_exit_minutes` INTEGER ❌ (stretch)
-- `time_based_exit_trigger` TEXT ❌ (stretch)
+- `confirmation_tolerance` TEXT ✅
+
+**Notes**:
+- Validated in `validateConfig.js` and stored in DB
+- Not yet consumed by `passesAggressionFilter()` — needs follow-up diff to wire to existing `aggression`/`confirmation_threshold` columns
+- Intended to scale the existing confirmation threshold (aggressive → 1, conservative → higher, adaptive → phase-dependent)
 
 ---
 
-### D. Aggression / Timing
+### 4. Match-Phase Focus
 
-**Current MVP Schema**: ✅ PARTIALLY IMPLEMENTED
-- `aggression`: instant, confirmation, cooldown
-- `cooldown_minutes`: numeric (1-30)
+**Current Schema**: ✅ FULLY IMPLEMENTED
+- `phase_weighting`: early, pre_halftime, second_half, late_stoppage, full_match
 
 **Database Columns**:
-- `aggression` TEXT ✅
-- `cooldown_minutes` INTEGER ✅
+- `phase_weighting` TEXT ✅
+
+**Notes**:
+- Replaces old 4-value enum (uniform, front_loaded, back_loaded, event_triggered) with new 5-value set
+- Each mode defines stake multiplier (1.5x for active phase, 0.5x for inactive)
+- Implemented in `getPhaseDecision()` in `agentRunner.js`
 
 ---
 
-### E. Budget Cap
+### 5. Score-State Reasoning
 
-**Current MVP Schema**: ✅ FULLY IMPLEMENTED
-- `budget_cap`: numeric (fixed constraint, LLM cannot modify)
+**Current Schema**: ✅ FULLY IMPLEMENTED
+- `score_state_mode`: favor_chasing, favor_leading, momentum_only
 
 **Database Columns**:
-- `budget_cap` NUMERIC ✅
+- `score_state_mode` TEXT ✅
 
-**Note**: This is a game rule, not a strategy variant. The LLM must NEVER modify this.
+**Notes**:
+- Continuous confidence nudge based on live score differential, independent of event triggers
+- `favor_chasing`: boosts confidence when backing the trailing side
+- `favor_leading`: boosts confidence when backing the leading side
+- `momentum_only`: no score-state adjustment (pure event reaction)
+- Implemented in `applyScoreStateBias()` in `strategyEngine.js`
 
 ---
 
-### F. Direction Bias
+### 6. Team/Side Bias
 
-**Current MVP Schema**: ✅ FULLY IMPLEMENTED
-- `direction_bias`: long_only, short_only, bidirectional
+**Current Schema**: ⚠️ PARTIAL ([FEED-SHAPE TBD])
+- `side_bias`: home, away, favorite, underdog, none
 
 **Database Columns**:
-- `direction_bias` TEXT ✅
+- `side_bias` TEXT ✅
+
+**Notes**:
+- Nudges confidence up when decision aligns with declared side
+- Favorite/underdog derived from opening odds implied probability (not live odds)
+- [FEED-SHAPE TBD]: Currently uses first snapshot in `history` as proxy for "opening odds" and assumes home is Participant1
+- Needs real feed fields (`Participant1IsHome`, opening `Pct`) for accurate favorite/underdog detection
+- Implemented in `applySideBias()` in `agentRunner.js`
 
 ---
 
-### H. Match-Phase Weighting (STRETCH - NOT IN MVP)
+### 7. Risk Profile
 
-**Options**:
-1. uniform
-2. front_loaded
-3. back_loaded
-4. event_triggered
+**Current Schema**: ✅ FULLY IMPLEMENTED
+- `risk_profile`: conservative, aggressive, martingale, flat_stake
 
 **Database Columns**:
-- `match_phase_weighting` TEXT ❌ (stretch)
-- `front_loaded_minutes` INTEGER ❌ (stretch)
-- `back_loaded_minutes` INTEGER ❌ (stretch)
-- `event_triggers` TEXT[] ❌ (stretch)
+- `risk_profile` TEXT ✅
 
-**Status**: BACKLOG - Advanced feature for multi-phase strategies
+**Notes**:
+- Superset of existing `position_sizing` enum
+- `martingale`: doubles base stake per consecutive loss (streak tracked in `agentRunner.js`)
+- Other profiles pass through to existing position_sizing-derived `computeStake()`
+- Martingale case flagged high-risk per spec
 
 ---
 
-### I. Re-entry Rule (STRETCH - NOT IN MVP)
+### 8. Reaction Latency
 
-**Options**:
-1. no_reentry
-2. immediate_reentry
-3. capped_reentry
+**Current Schema**: ✅ FULLY IMPLEMENTED
+- `reaction_latency_ms`: numeric (0-30000)
 
 **Database Columns**:
-- `reentry_rule` TEXT ❌ (stretch)
-- `max_trades_per_match` INTEGER ❌ (stretch)
+- `reaction_latency_ms` INTEGER ✅
 
-**Status**: BACKLOG - Current implementation allows unlimited re-entry
+**Notes**:
+- Delays how long agent takes to "see" a snapshot
+- Instant (0ms), Fast (2000-5000ms), Delayed (15000-30000ms)
+- Implemented via queue in `applyReactionLatency()` in `agentRunner.js`
+- Agent trades against snapshot that's `reaction_latency_ms` stale, simulating real-world delay
 
 ---
 
-### K. Adaptivity
+### 9. Context Awareness
 
-**Current MVP Schema**: ✅ PARTIALLY IMPLEMENTED
-- This is the mechanism itself (LLM-reflective mode)
+**Current Schema**: ⚠️ PARTIAL ([FEED-SHAPE TBD])
+- `context_venue_aware`: boolean
+- `context_weather_aware`: boolean
+- `context_competition_tier_aware`: boolean
 
 **Database Columns**:
-- `adaptivity_mode` TEXT ❌ (needs to be added)
-- `llm_reflection_enabled` BOOLEAN ❌ (needs to be added)
-- `last_reflection_timestamp` TIMESTAMPTZ ❌ (needs to be added)
+- `context_venue_aware` BOOLEAN ✅
+- `context_weather_aware` BOOLEAN ✅
+- `context_competition_tier_aware` BOOLEAN ✅
 
-**Status**: IN PROGRESS - This is the current task being implemented
-
-**Enum Values**:
-- static
-- self_adjusting
-- llm_reflective
+**Notes**:
+- Reads venue/weather/competition-tier once at startup, applies flat confidence multiplier
+- [FEED-SHAPE TBD]: No fixture-details endpoint exists yet; currently reads from optional `MOCK_FIXTURE_DETAILS` env var
+- Needs real TxLINE fixture-details endpoint for production use
+- Implemented in `loadContextAwareness()` in `agentRunner.js`
 
 ---
 
-### L. Risk Ceiling (STRETCH - NOT IN MVP)
+### 10. Wildcard Traits
 
-**Options**:
-1. none
-2. max_drawdown_stop
-3. max_exposure_cap
+**Current Schema**: ✅ FULLY IMPLEMENTED (except nostalgia_trader)
+- `wildcard_trait`: none, chaos_agent, comeback_romantic, revenge_trader, superstition, weather_prophet, rivalry_rage, bandwagon, contrarian, last_minute_believer, nostalgia_trader
 
 **Database Columns**:
-- `risk_ceiling` TEXT ❌ (stretch)
-- `max_drawdown_percent` NUMERIC ❌ (stretch)
-- `max_exposure_cap` NUMERIC ❌ (stretch)
+- `wildcard_trait` TEXT ✅
 
-**Status**: BACKLOG - Important for production, but not MVP
+**Notes**:
+- Small dispatch table applied last, after all other filters/bias
+- Each trait implements specific irrational behavior pattern
+- `nostalgia_trader`: [FEED-SHAPE TBD] No-op until roster/lineup data available (no lineup endpoint in txline.js)
+- Implemented in `applyWildcardTrait()` in `agentRunner.js`
 
 ---
 
 ## Summary Table
 
-| Factor | MVP Status | Database Columns | Notes |
-|--------|-----------|-----------------|-------|
-| A. Signal | ✅ Partial | 3 existing, 2 stretch | Secondary signal is stretch |
-| B. Position Sizing | ✅ Complete | 3 existing | Fully implemented |
-| C. Exit Rule | ✅ Partial | 3 existing, 2 stretch | Time-based parameters are stretch |
-| D. Aggression | ✅ Complete | 2 existing | Fully implemented |
-| E. Budget Cap | ✅ Complete | 1 existing | Fixed constraint, immutable |
-| F. Direction Bias | ✅ Complete | 1 existing | Fully implemented |
-| H. Match-Phase Weighting | ❌ Stretch | 0 existing, 4 stretch | Backlog |
-| I. Re-entry Rule | ❌ Stretch | 0 existing, 2 stretch | Backlog |
-| K. Adaptivity | 🔄 In Progress | 0 existing, 3 needed | Current task |
-| L. Risk Ceiling | ❌ Stretch | 0 existing, 3 stretch | Backlog |
+| Factor | Status | Database Columns | Notes |
+|--------|--------|-----------------|-------|
+| 1. Market Focus | ⚠️ Partial | 3 existing | Feed shape TBD for multi-market |
+| 2. Decision Style | ✅ Full | 1 existing | Fully implemented |
+| 3. Confirmation Tolerance | ✅ Validated | 1 existing | Not yet wired to aggression filter |
+| 4. Match-Phase Focus | ✅ Full | 1 existing | New 5-phase enum |
+| 5. Score-State Reasoning | ✅ Full | 1 existing | Continuous confidence nudge |
+| 6. Team/Side Bias | ⚠️ Partial | 1 existing | Feed shape TBD for favorite/underdog |
+| 7. Risk Profile | ✅ Full | 1 existing | Includes martingale |
+| 8. Reaction Latency | ✅ Full | 1 existing | Queue-based delay |
+| 9. Context Awareness | ⚠️ Partial | 3 existing | Feed shape TBD for fixture details |
+| 10. Wildcard Traits | ✅ Full | 1 existing | Nostalgia trader needs roster data |
 
 ---
 
-## MVP Subset (A-D + F + K)
+## Dead Columns (Left In Place)
 
-**Factors in MVP**: A, B, C, D, E, F, K
-**Total Strategy Space**: ~3,402 strategies
-- Signals: 6 options
-- Sizing: 3 options
-- Exit: 3 options
-- Aggression: 3 options
-- Direction: 3 options
-- Adaptivity: 3 options (static, self-adjusting, llm_reflective)
+The following columns are no longer used but left in the schema to avoid destructive migration:
+- `secondary_signal_type`, `secondary_signal_threshold`
+- `volatility_threshold`, `volatility_timeframe`
+- `mean_reversion_threshold`
+- `momentum_threshold`
+- `time_decay_start`, `time_decay_end`
 
-**Stretch Factors (Backlog)**: H, I, L
+A follow-up cleanup migration can drop these once the new config has run in production.
 
 ---
 
-## Database Schema Additions Needed for MVP Completion
+## Migration Notes
 
-To complete the MVP with LLM-reflective adaptivity (K), we need to add:
+### Phase Weighting Backfill Required
+
+Before applying the new `CHECK` constraint for `phase_weighting`, existing rows must be backfilled from old values to new 5-value enum:
 
 ```sql
-ALTER TABLE public.agents
-ADD COLUMN IF NOT EXISTS adaptivity_mode TEXT DEFAULT 'static',
-ADD COLUMN IF NOT EXISTS llm_reflection_enabled BOOLEAN DEFAULT false,
-ADD COLUMN IF NOT EXISTS last_reflection_timestamp TIMESTAMPTZ;
+UPDATE public.agents SET phase_weighting = 'full_match' WHERE phase_weighting IN ('uniform','event_triggered');
+UPDATE public.agents SET phase_weighting = 'early' WHERE phase_weighting = 'front_loaded';
+UPDATE public.agents SET phase_weighting = 'late_stoppage' WHERE phase_weighting = 'back_loaded';
 ```
 
-**Constraint**: `adaptivity_mode` must be one of: 'static', 'self_adjusting', 'llm_reflective'
+Run this before the `DROP CONSTRAINT` / `ADD CONSTRAINT` pair in `schema.sql`.
 
----
+### Feed Shape Dependencies
 
-## Prompt Template Coverage
+Several factors are marked ⚠️ PARTIAL pending TxLINE feed shape decisions:
+- Market Focus needs multi-market odds array structure
+- Side Bias needs `Participant1IsHome` and opening `Pct` fields
+- Context Awareness needs fixture-details endpoint
+- Nostalgia Trader needs roster/lineup data
 
-The prompt template (`reflectiveStrategy.md`) currently covers:
-- ✅ A: Signal (signal_type, odds_threshold, odds_timeframe)
-- ✅ B: Position Sizing (position_sizing, fixed_stake, percentage_stake)
-- ✅ C: Exit Rule (exit_rule, stop_loss, take_profit)
-- ✅ D: Aggression (aggression, cooldown_minutes)
-- ✅ E: Budget Cap (read-only, immutable)
-- ✅ F: Direction Bias (direction_bias)
-- ✅ K: Adaptivity (implicit through the reflective process itself)
+Current implementations degrade to approximations against today's single-odds/single-event feed.
 
-**Not covered in prompt** (stretch factors):
-- ❌ H: Match-Phase Weighting
-- ❌ I: Re-entry Rule
-- ❌ L: Risk Ceiling
+### Confirmation Tolerance Wiring
 
-The prompt is designed to be extensible - when stretch factors are added to the schema, they can be added to the prompt template without restructuring.
+`confirmation_tolerance` is validated and stored but not yet consumed by `passesAggressionFilter()`. Needs follow-up diff to wire to existing `aggression`/`confirmation_threshold` columns (aggressive → 1, conservative → higher, adaptive → phase-dependent).

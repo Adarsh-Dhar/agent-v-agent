@@ -1,8 +1,31 @@
+// Score-State Reasoning (continuous, not event-triggered): nudges confidence
+// up/down based on the live score differential and the agent's declared
+// preference, independent of whether an event fired this tick.
+// favor_chasing  -> boosts confidence when backing the trailing side
+// favor_leading  -> boosts confidence when backing the leading side
+// momentum_only  -> no score-state adjustment (pure event reaction)
+export function applyScoreStateBias(agent, latest, decision) {
+  const mode = agent.score_state_mode || 'momentum_only';
+  if (mode === 'momentum_only' || decision.action === 'hold') return decision;
+
+  const diff = (latest.score?.home ?? 0) - (latest.score?.away ?? 0);
+  if (diff === 0) return decision; // level score, nothing to chase or lead
+
+  const backingHome = decision.action === 'buy';
+  const backingTrailingSide = (diff > 0 && !backingHome) || (diff < 0 && backingHome);
+
+  const wantsChasing = mode === 'favor_chasing';
+  const aligned = wantsChasing ? backingTrailingSide : !backingTrailingSide;
+
+  const adjustment = aligned ? 0.15 : -0.15;
+  return { ...decision, confidence: Math.max(0, Math.min(1, decision.confidence + adjustment)) };
+}
+
 // Maps each score_state trigger event to the direction it should open.
 // 'buy' = odds expected to shorten toward home (event favors the home side),
 // 'sell' = odds expected to lengthen toward away (event favors the away side).
 // Events with no inherent directional lean (e.g. 'penalties') are omitted on
-// purpose - runSignal treats an unmapped event as no signal rather than guessing.
+// purpose - unmapped events are treated as no signal rather than a guess.
 const SCORE_STATE_DIRECTION = {
   goal_home: 'buy',
   red_card_away: 'buy',
@@ -10,57 +33,54 @@ const SCORE_STATE_DIRECTION = {
   red_card_home: 'sell',
 };
 
-/**
- * Given an agent with individual config columns and a rolling window of odds snapshots,
- * decide whether to buy, sell, or hold right now.
- * Returns { action: 'buy'|'sell'|'hold', reason: string, confidence: number }
- */
-function runSignal(signalType, threshold, agent, history, latest, prev, pctChange) {
-  // Extracted so the primary and secondary signal can both call the same
-  // per-type logic without duplicating the switch statement.
-  switch (signalType) {
-    case 'odds-movement':
-    case 'odds_movement':
-      return Math.abs(pctChange) >= threshold
-        ? { action: pctChange > 0 ? 'sell' : 'buy', confidence: Math.min(1, Math.abs(pctChange) / threshold) }
-        : null;
-    case 'momentum':
-      return Math.abs(pctChange) >= threshold
-        ? { action: pctChange > 0 ? 'buy' : 'sell', confidence: Math.min(1, Math.abs(pctChange) / 0.05) }
-        : null;
-    case 'mean_reversion':
-      return Math.abs(pctChange) >= threshold
-        ? { action: pctChange > 0 ? 'buy' : 'sell', confidence: Math.min(1, Math.abs(pctChange) / 0.06) }
-        : null;
-    case 'score_state': {
-      if (!latest.event || !(agent.score_state_triggers ?? []).includes(latest.event)) return null;
-      const direction = SCORE_STATE_DIRECTION[latest.event];
-      // Trigger fired (e.g. 'penalties') but has no directional mapping - skip
-      // rather than guess a side.
-      if (!direction) return null;
-      return { action: direction, confidence: 0.7 };
-    }
-    case 'time_decay': {
-      if (latest.minute < 85) return null;
-      // Late-match: back whichever side is currently leading to close out the
-      // result (buy = home leading, sell = away leading). A level score has
-      // no favorite to back, so no signal.
-      const diff = (latest.score?.home ?? 0) - (latest.score?.away ?? 0);
-      if (diff === 0) return null;
-      return { action: diff > 0 ? 'buy' : 'sell', confidence: 0.5 };
-    }
-    case 'volatility_spike': {
-      const recent = history.slice(-5).map((h) => h.odds);
-      const variance =
-        recent.reduce((sum, o, i, arr) => (i === 0 ? 0 : sum + Math.abs(o - arr[i - 1])), 0) / recent.length;
-      if (variance < threshold) return null;
-      // Trade with the direction of the move that caused the spike, i.e. a
-      // breakout continuation (same convention as 'momentum').
-      if (pctChange === 0) return null;
-      return { action: pctChange > 0 ? 'buy' : 'sell', confidence: 0.6 };
-    }
+// Buildup events that count toward an "anticipatory" pre-goal signal.
+// [FEED-SHAPE TBD]: today's feed only emits a flattened `event` string per
+// tick (see mockTxlineFeed.js / txlineReplay.js), not a possession/shot
+// stream. Until the feed carries `possessionType` / `Action` per tick, this
+// keys off the same `latest.event` field score_state already uses, treating
+// certain events as "buildup adjacent" is not possible — so anticipatory
+// mode currently degrades to firing one tick earlier than confirmatory would
+// by watching for `latest.event === 'red_card_away' || 'red_card_home'`
+// (immediate, un-VAR'd) rather than a true pre-goal possession signal.
+// Replace ANTICIPATORY_EVENTS with real possession-streak detection once the
+// feed exposes it.
+const ANTICIPATORY_EVENTS = new Set(['red_card_home', 'red_card_away']);
+const CONFIRMATORY_EVENTS = new Set(['goal_home', 'goal_away', 'red_card_home', 'red_card_away', 'penalties']);
+
+function runAnticipatory(agent, latest) {
+  if (!latest.event || !ANTICIPATORY_EVENTS.has(latest.event)) return null;
+  const direction = SCORE_STATE_DIRECTION[latest.event];
+  if (!direction) return null;
+  // Higher confidence ceiling than confirmatory since it's still un-realized —
+  // Confirmation Tolerance (see agentRunner.js) is what actually gates risk.
+  return { action: direction, confidence: 0.55 };
+}
+
+function runConfirmatory(agent, latest) {
+  if (!latest.event || !CONFIRMATORY_EVENTS.has(latest.event)) return null;
+  const direction = SCORE_STATE_DIRECTION[latest.event];
+  if (!direction) return null; // e.g. 'penalties' has no directional lean
+  return { action: direction, confidence: 0.8 };
+}
+
+function runBalanced(agent, latest) {
+  const anticipatory = runAnticipatory(agent, latest);
+  const confirmatory = runConfirmatory(agent, latest);
+  // Balanced requires both readings to agree on direction before firing —
+  // mirrors the existing primary/secondary agreement pattern below.
+  if (!anticipatory || !confirmatory || anticipatory.action !== confirmatory.action) return null;
+  return { action: confirmatory.action, confidence: (anticipatory.confidence + confirmatory.confidence) / 2 };
+}
+
+function runSignal(decisionStyle, agent, latest) {
+  switch (decisionStyle) {
+    case 'anticipatory':
+      return runAnticipatory(agent, latest);
+    case 'confirmatory':
+      return runConfirmatory(agent, latest);
+    case 'balanced':
     default:
-      return null;
+      return runBalanced(agent, latest);
   }
 }
 
@@ -68,31 +88,17 @@ export function evaluateSignal(agent, history) {
   if (history.length < 2) return { action: 'hold', reason: 'warming_up', confidence: 0 };
 
   const latest = history[history.length - 1];
-  const timeframeMin = agent.odds_timeframe ?? 5;
-  // Find the oldest snapshot that is still within the configured lookback
-  // window; fall back to the immediately preceding tick if history is too
-  // short to cover the full timeframe yet.
-  const prev =
-    [...history].reverse().find((h) => h !== latest && latest.minute - h.minute >= timeframeMin) ??
-    history[history.length - 2];
-  const pctChange = (latest.odds - prev.odds) / prev.odds;
-
-  const signal = agent.signal_type || 'odds-movement';
+  const decisionStyle = agent.decision_style || 'balanced';
   let decision = { action: 'hold', reason: 'no_signal', confidence: 0 };
 
-  const primary = runSignal(signal, (agent.odds_threshold ?? 5) / 100, agent, history, latest, prev, pctChange);
+  const primary = runSignal(decisionStyle, agent, latest);
   decision = primary
-    ? { action: primary.action, reason: `${signal}:${(pctChange * 100).toFixed(1)}%`, confidence: primary.confidence }
+    ? { action: primary.action, reason: `${decisionStyle}:${latest.event}`, confidence: primary.confidence }
     : { action: 'hold', reason: 'no_signal', confidence: 0 };
 
-  // A. Optional secondary filter: both signals must agree on direction,
-  // otherwise the trade is suppressed even though the primary fired.
-  if (decision.action !== 'hold' && agent.secondary_signal_type) {
-    const secThreshold = (agent.secondary_signal_threshold ?? 5) / 100;
-    const secondary = runSignal(agent.secondary_signal_type, secThreshold, agent, history, latest, prev, pctChange);
-    if (!secondary || secondary.action !== decision.action) {
-      return { action: 'hold', reason: `blocked_by_secondary:${agent.secondary_signal_type}`, confidence: 0 };
-    }
+  // Score-State Reasoning: continuous confidence nudge based on live score diff.
+  if (decision.action !== 'hold') {
+    decision = applyScoreStateBias(agent, latest, decision);
   }
 
   // Direction bias filter (long_only / short_only / bidirectional)
@@ -123,6 +129,16 @@ export function computeStake(agent, balance, confidence) {
     case 'confidence_weighted': {
       const maxPct = (agent.percentage_stake ?? 20) / 100;
       return Math.min(balance * maxPct * confidence, balance);
+    }
+    case 'martingale': {
+      // Risk Profile: martingale — doubles the base stake per consecutive
+      // loss. lastResultStreak is threaded in by agentRunner.js (see §5);
+      // computeStake stays a pure function, so the streak is passed as a
+      // 3rd-ish input via agent.__martingaleStreak rather than closed-over
+      // module state, to keep this file side-effect free.
+      const base = agent.fixed_stake ?? 100;
+      const streak = agent.__martingaleStreak ?? 0;
+      return Math.min(base * Math.pow(2, streak), balance);
     }
     default:
       return 0;

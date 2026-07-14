@@ -55,13 +55,19 @@ const FULLTIME_MINUTE = 90;
 // actually spawns).
 // ---------------------------------------------------------------------------
 const FACTORS = {
-  signal: ['odds-movement', 'score_state', 'mean_reversion', 'momentum', 'time_decay', 'volatility_spike'],
+  market_focus: ['1x2', 'asian_handicap', 'over_under', 'multi_market'],
+  decision_style: ['anticipatory', 'confirmatory', 'balanced'],
+  confirmation_tolerance: ['aggressive', 'conservative', 'adaptive'],
+  score_state_mode: ['favor_chasing', 'favor_leading', 'momentum_only'],
+  side_bias: ['home', 'away', 'favorite', 'underdog', 'none'],
+  risk_profile: ['conservative', 'aggressive', 'martingale', 'flat_stake'],
   position_sizing: ['fixed', 'percent_of_budget', 'confidence_weighted'],
   exit_rule: ['stop-loss', 'time_based', 'signal_reversal'],
   aggression: ['instant', 'confirmation', 'cooldown'],
   direction_bias: ['long_only', 'short_only', 'bidirectional'],
-  phase_weighting: ['uniform', 'front_loaded', 'back_loaded', 'event_triggered'],
+  phase_weighting: ['early', 'pre_halftime', 'second_half', 'late_stoppage', 'full_match'],
   reentry_rule: ['no_reentry', 'immediate_reentry', 'capped_reentry'],
+  wildcard_trait: ['none', 'chaos_agent', 'comeback_romantic', 'revenge_trader', 'superstition', 'weather_prophet', 'rivalry_rage', 'bandwagon', 'contrarian', 'last_minute_believer', 'nostalgia_trader'],
 };
 const SCORE_STATE_EVENTS = ['goal_home', 'goal_away', 'red_card_away', 'red_card_home'];
 
@@ -85,7 +91,12 @@ function weightedChoice(pairs) {
 }
 
 function generateRandomConfig() {
-  const signal = randomChoice(FACTORS.signal);
+  const marketFocus = randomChoice(FACTORS.market_focus);
+  const decisionStyle = randomChoice(FACTORS.decision_style);
+  const confirmationTolerance = randomChoice(FACTORS.confirmation_tolerance);
+  const scoreStateMode = randomChoice(FACTORS.score_state_mode);
+  const sideBias = randomChoice(FACTORS.side_bias);
+  const riskProfile = randomChoice(FACTORS.risk_profile);
   const sizing = randomChoice(FACTORS.position_sizing);
   const exit = randomChoice(FACTORS.exit_rule);
   const aggression = randomChoice(FACTORS.aggression);
@@ -94,9 +105,16 @@ function generateRandomConfig() {
   const reentryRule = randomChoice(FACTORS.reentry_rule);
   const maxReentries =
     reentryRule === 'no_reentry' ? 1 : reentryRule === 'immediate_reentry' ? null : randomInt(2, 10);
+  const reactionLatency = randomInt(0, 30000);
+  const wildcardTrait = randomChoice(FACTORS.wildcard_trait);
 
   const config = {
-    signal_type: signal,
+    market_focus: marketFocus,
+    decision_style: decisionStyle,
+    confirmation_tolerance: confirmationTolerance,
+    score_state_mode: scoreStateMode,
+    side_bias: sideBias,
+    risk_profile: riskProfile,
     position_sizing: sizing,
     exit_rule: exit,
     aggression,
@@ -104,18 +122,17 @@ function generateRandomConfig() {
     phase_weighting: phaseWeighting,
     reentry_rule: reentryRule,
     max_reentries: maxReentries,
+    reaction_latency_ms: reactionLatency,
+    wildcard_trait: wildcardTrait,
     max_exposure_pct: randomInt(20, 50),
     max_drawdown_stop_pct: randomInt(15, 40),
   };
 
-  if (signal === 'odds-movement' || signal === 'odds_movement' || signal === 'mean_reversion' || signal === 'momentum' || signal === 'volatility_spike') {
-    config.odds_threshold = randomInt(2, 10);
-    config.odds_timeframe = randomInt(2, 10);
+  if (marketFocus === 'asian_handicap') {
+    config.ah_line_band = randomChoice(['tight', 'deep']);
   }
-  if (signal === 'score_state') {
-    // pick 1-3 trigger events this agent reacts to
-    const n = randomInt(1, 3);
-    config.score_state_triggers = [...SCORE_STATE_EVENTS].sort(() => Math.random() - 0.5).slice(0, n);
+  if (marketFocus === 'over_under') {
+    config.ou_line_band = randomChoice(['low', 'mid', 'high']);
   }
 
   if (sizing === 'fixed') {
@@ -158,16 +175,16 @@ function generateRandomConfig() {
 // weak ones.
 // ---------------------------------------------------------------------------
 function generateAggressiveConfig() {
-  // Rotate through the signal types that actually respond to odds ticks
-  // (as opposed to score_state/time_decay, which only fire a few times a
-  // match no matter how the config is tuned).
-  const ODDS_REACTIVE_SIGNALS = ['odds-movement', 'momentum', 'volatility_spike', 'mean_reversion'];
-  const signal = randomChoice(ODDS_REACTIVE_SIGNALS);
+  // Rotate through the decision styles that actually respond to odds ticks
+  // (anticipatory fires on buildup events, confirmatory on confirmed events,
+  // balanced requires both to agree).
+  const DECISION_STYLES = ['anticipatory', 'confirmatory', 'balanced'];
+  const decisionStyle = randomChoice(DECISION_STYLES);
 
   // Every factor below is randomized (weighted, not hardcoded) so agents stay
   // individually distinct - the earlier version pinned sizing/exit/aggression/
   // direction/phase/reentry identically for every agent, which meant "profile
-  // aggressive" agents only differed by signal_type. Weights lean toward the
+  // aggressive" agents only differed by decision_style. Weights lean toward the
   // options that trade often and cut losers fast (that was the original
   // intent) without collapsing the other options out of the space entirely.
   const sizing = weightedChoice([
@@ -191,10 +208,11 @@ function generateAggressiveConfig() {
     ['short_only', 1],
   ]);
   const phaseWeighting = weightedChoice([
-    ['uniform', 6],
-    ['front_loaded', 2],
-    ['back_loaded', 2],
-    ['event_triggered', 0],
+    ['full_match', 6],
+    ['early', 2],
+    ['pre_halftime', 2],
+    ['second_half', 2],
+    ['late_stoppage', 2],
   ]);
   const reentryRule = weightedChoice([
     ['immediate_reentry', 8],
@@ -205,7 +223,12 @@ function generateAggressiveConfig() {
     reentryRule === 'no_reentry' ? 1 : reentryRule === 'immediate_reentry' ? null : randomInt(3, 12);
 
   const config = {
-    signal_type: signal,
+    market_focus: '1x2', // aggressive profile defaults to 1x2 for simplicity
+    decision_style: decisionStyle,
+    confirmation_tolerance: 'aggressive',
+    score_state_mode: 'momentum_only',
+    side_bias: 'none',
+    risk_profile: 'aggressive',
     position_sizing: sizing,
     exit_rule: exit,
     aggression,
@@ -213,16 +236,13 @@ function generateAggressiveConfig() {
     phase_weighting: phaseWeighting,
     reentry_rule: reentryRule,
     max_reentries: maxReentries,
+    reaction_latency_ms: randomInt(0, 3000), // fast reaction for aggressive profile
+    wildcard_trait: 'none',
     // Risk ceiling (L): most agents get an exposure cap and/or drawdown stop,
     // but a slice run with no ceiling at all, so 'none' stays a real option
     // instead of every agent always carrying both caps.
     max_exposure_pct: Math.random() < 0.85 ? randomInt(25, 50) : null,
     max_drawdown_stop_pct: Math.random() < 0.8 ? randomInt(25, 50) : null,
-    // Small threshold (1-4%) so it's sensitive to the feed's normal tick-to-
-    // tick jitter, not just the big event-driven jumps. Short lookback
-    // window so it reacts fast instead of waiting several minutes to confirm.
-    odds_threshold: randomInt(1, 4),
-    odds_timeframe: randomInt(1, 3),
   };
 
   if (sizing === 'fixed') {
@@ -244,14 +264,11 @@ function generateAggressiveConfig() {
     config.confirmation_count = 2;
   }
 
-  // A: optional secondary filter - about 1 in 7 agents require a second,
-  // different odds-reactive signal to agree with the primary before firing.
-  // These agents trade less often but with higher conviction; leaving this
-  // out entirely (as before) meant that whole factor was never exercised.
-  if (Math.random() < 0.15) {
-    const secondaryOptions = ODDS_REACTIVE_SIGNALS.filter((s) => s !== signal);
-    config.secondary_signal_type = randomChoice(secondaryOptions);
-    config.secondary_signal_threshold = randomInt(1, 4);
+  // A: optional wildcard trait - about 1 in 10 agents get a wildcard trait
+  // for irrational behavior patterns.
+  if (Math.random() < 0.1) {
+    const wildcardOptions = FACTORS.wildcard_trait.filter((t) => t !== 'none');
+    config.wildcard_trait = randomChoice(wildcardOptions);
   }
 
   return config;
@@ -342,24 +359,26 @@ function passesAggressionFilter(agent, decision, now) {
 }
 
 function getPhaseDecision(agent, snapshot) {
-  const mode = agent.config.phase_weighting || 'uniform';
+  const mode = agent.config.phase_weighting || 'full_match';
   const minute = snapshot.minute;
 
-  if (mode === 'event_triggered') {
-    if (!snapshot.event) return { allow: false, multiplier: 0 };
-    return { allow: true, multiplier: 1 };
-  }
-  if (mode === 'front_loaded') {
-    if (minute <= 30) return { allow: true, multiplier: 1.5 };
-    if (minute <= 60) return { allow: true, multiplier: 1.0 };
+  if (mode === 'early') {
+    if (minute <= 20) return { allow: true, multiplier: 1.5 };
     return { allow: true, multiplier: 0.5 };
   }
-  if (mode === 'back_loaded') {
-    if (minute <= 30) return { allow: true, multiplier: 0.5 };
-    if (minute <= 60) return { allow: true, multiplier: 1.0 };
-    return { allow: true, multiplier: 1.5 };
+  if (mode === 'pre_halftime') {
+    if (minute <= 45) return { allow: true, multiplier: 1.5 };
+    return { allow: true, multiplier: 0.5 };
   }
-  return { allow: true, multiplier: 1 }; // uniform
+  if (mode === 'second_half') {
+    if (minute > 45 && minute <= 75) return { allow: true, multiplier: 1.5 };
+    return { allow: true, multiplier: 0.5 };
+  }
+  if (mode === 'late_stoppage') {
+    if (minute >= 75) return { allow: true, multiplier: 1.5 };
+    return { allow: true, multiplier: 0.5 };
+  }
+  return { allow: true, multiplier: 1 }; // full_match
 }
 
 function applyExposureCap(agent, stake) {
@@ -477,7 +496,7 @@ if (CONFIG_PATH) {
 } else {
   agents = Array.from({ length: NUM_AGENTS }, (_, i) => {
     const config = PROFILE === 'random' ? generateRandomConfig() : generateAggressiveConfig();
-    return makeAgent(`agent-${i + 1}:${config.signal_type}`, config, BUDGET);
+    return makeAgent(`agent-${i + 1}:${config.decision_style}`, config, BUDGET);
   });
 }
 
@@ -541,7 +560,7 @@ function finish(finalSnapshot) {
     const roiPct = ((a.balance - a.budget) / a.budget) * 100;
     return {
       name: a.name,
-      signal: a.config.signal_type,
+      signal: a.config.decision_style,
       trades: a.tradeCount,
       wins,
       losses,

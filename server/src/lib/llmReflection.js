@@ -18,11 +18,12 @@ const groq = new Groq({
 
 // Zod schema for LLM output validation
 const StrategyConfigSchema = z.object({
-  signal_type: z.enum(['odds-movement', 'score_state', 'mean_reversion', 'momentum', 'time_decay', 'volatility_spike']),
-  odds_threshold: z.number().min(1).max(50),
-  odds_timeframe: z.number().min(1).max(60),
-  secondary_signal_type: z.enum(['odds-movement', 'score_state', 'mean_reversion', 'momentum', 'time_decay', 'volatility_spike']).nullable().optional(),
-  secondary_signal_threshold: z.number().min(1).max(50).nullable().optional(),
+  market_focus: z.enum(['1x2', 'asian_handicap', 'over_under', 'multi_market']),
+  decision_style: z.enum(['anticipatory', 'confirmatory', 'balanced']),
+  confirmation_tolerance: z.enum(['aggressive', 'conservative', 'adaptive']),
+  score_state_mode: z.enum(['favor_chasing', 'favor_leading', 'momentum_only']),
+  side_bias: z.enum(['home', 'away', 'favorite', 'underdog', 'none']),
+  reaction_latency_ms: z.number().min(0).max(30000),
   position_sizing: z.enum(['fixed', 'percent_of_budget', 'confidence_weighted']),
   fixed_stake: z.number().min(10).max(1000),
   percentage_stake: z.number().min(1).max(100),
@@ -33,7 +34,7 @@ const StrategyConfigSchema = z.object({
   cooldown_minutes: z.number().min(1).max(30),
   direction_bias: z.enum(['long_only', 'short_only', 'bidirectional']),
   justification: z.object({
-    signal_type: z.string(),
+    decision_style: z.string(),
     position_sizing: z.string(),
     exit_rule: z.string(),
     aggression: z.string(),
@@ -56,11 +57,12 @@ function buildPrompt(currentConfig, tradeLog, performanceSummary, validationErro
   let prompt = loadPromptTemplate();
 
   // Replace placeholders with actual data
-  prompt = prompt.replace('{{SIGNAL_TYPE}}', currentConfig.signal_type || 'odds-movement');
-  prompt = prompt.replace('{{ODDS_THRESHOLD}}', currentConfig.odds_threshold || 5);
-  prompt = prompt.replace('{{ODDS_TIMEFRAME}}', currentConfig.odds_timeframe || 5);
-  prompt = prompt.replace('{{SECONDARY_SIGNAL_TYPE}}', currentConfig.secondary_signal_type || 'null');
-  prompt = prompt.replace('{{SECONDARY_SIGNAL_THRESHOLD}}', currentConfig.secondary_signal_threshold || 'null');
+  prompt = prompt.replace('{{MARKET_FOCUS}}', currentConfig.market_focus || '1x2');
+  prompt = prompt.replace('{{DECISION_STYLE}}', currentConfig.decision_style || 'balanced');
+  prompt = prompt.replace('{{CONFIRMATION_TOLERANCE}}', currentConfig.confirmation_tolerance || 'adaptive');
+  prompt = prompt.replace('{{SCORE_STATE_MODE}}', currentConfig.score_state_mode || 'momentum_only');
+  prompt = prompt.replace('{{SIDE_BIAS}}', currentConfig.side_bias || 'none');
+  prompt = prompt.replace('{{REACTION_LATENCY_MS}}', currentConfig.reaction_latency_ms ?? 3000);
   prompt = prompt.replace('{{POSITION_SIZING}}', currentConfig.position_sizing || 'fixed');
   prompt = prompt.replace('{{FIXED_STAKE}}', currentConfig.fixed_stake || 100);
   prompt = prompt.replace('{{PERCENTAGE_STAKE}}', currentConfig.percentage_stake || 10);
@@ -92,7 +94,7 @@ ${validationError}
 Ensure your output:
 - Uses exact enum values from the schema
 - Includes all required fields
-- Respects numeric ranges (e.g., odds_threshold: 1-50)
+- Respects numeric ranges (e.g., reaction_latency_ms: 0-30000)
 - Is valid JSON with no markdown formatting
 </validation_error>
 `;
@@ -143,7 +145,8 @@ function validateBusinessRules(previousConfig, proposedConfig, performanceSummar
 
   // 2. Strategy factor is locked at agent creation. The reflection's job is
   // profit-maximizing parameter tuning within that factor, not switching it.
-  const lockedFields = ['signal_type', 'position_sizing', 'exit_rule', 'aggression', 'direction_bias'];
+  // decision_style/market_focus/side_bias are the agent's new fixed identity.
+  const lockedFields = ['decision_style', 'market_focus', 'side_bias', 'position_sizing', 'exit_rule', 'aggression', 'direction_bias'];
   for (const field of lockedFields) {
     if (proposedConfig[field] !== undefined && previousConfig[field] !== undefined && proposedConfig[field] !== previousConfig[field]) {
       errors.push(`${field} is a locked strategy factor and cannot be changed (was '${previousConfig[field]}', got '${proposedConfig[field]}')`);
@@ -151,7 +154,7 @@ function validateBusinessRules(previousConfig, proposedConfig, performanceSummar
   }
 
   // 3. Conservative change limit (<50%)
-  const numericFields = ['odds_threshold', 'fixed_stake', 'percentage_stake', 'stop_loss', 'take_profit', 'cooldown_minutes'];
+  const numericFields = ['reaction_latency_ms', 'fixed_stake', 'percentage_stake', 'stop_loss', 'take_profit', 'cooldown_minutes'];
   for (const field of numericFields) {
     if (proposedConfig[field] !== undefined && previousConfig[field] !== undefined) {
       const diff = (proposedConfig[field] - previousConfig[field]) / previousConfig[field];
@@ -165,7 +168,7 @@ function validateBusinessRules(previousConfig, proposedConfig, performanceSummar
   if (!proposedConfig.justification) {
     errors.push('Missing justification object');
   } else {
-    const requiredJustifications = ['signal_type', 'position_sizing', 'exit_rule', 'aggression', 'direction_bias'];
+    const requiredJustifications = ['decision_style', 'position_sizing', 'exit_rule', 'aggression', 'direction_bias'];
     for (const field of requiredJustifications) {
       if (!proposedConfig.justification[field] || proposedConfig.justification[field].length < 10) {
         errors.push(`Justification for ${field} is missing or too short`);
@@ -254,11 +257,12 @@ export async function reflectOnStrategy(agentId, currentConfig, tradeLog, perfor
     const { error } = await supabase
       .from('agents')
       .update({
-        signal_type: result.config.signal_type,
-        odds_threshold: result.config.odds_threshold,
-        odds_timeframe: result.config.odds_timeframe,
-        secondary_signal_type: result.config.secondary_signal_type,
-        secondary_signal_threshold: result.config.secondary_signal_threshold,
+        market_focus: result.config.market_focus,
+        decision_style: result.config.decision_style,
+        confirmation_tolerance: result.config.confirmation_tolerance,
+        score_state_mode: result.config.score_state_mode,
+        side_bias: result.config.side_bias,
+        reaction_latency_ms: result.config.reaction_latency_ms,
         position_sizing: result.config.position_sizing,
         fixed_stake: result.config.fixed_stake,
         percentage_stake: result.config.percentage_stake,

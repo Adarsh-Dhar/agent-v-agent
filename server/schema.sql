@@ -114,6 +114,45 @@ CREATE TABLE IF NOT EXISTS public.reflection_failures (
 CREATE INDEX IF NOT EXISTS reflection_failures_agent_id_idx ON public.reflection_failures(agent_id);
 CREATE INDEX IF NOT EXISTS reflection_failures_timestamp_idx ON public.reflection_failures(timestamp DESC);
 
+-- New config: Market Focus, Decision Style, Confirmation Tolerance,
+-- Side Bias, Reaction Latency, Context Awareness, Wildcard Traits
+ALTER TABLE public.agents
+ADD COLUMN IF NOT EXISTS market_focus TEXT DEFAULT '1x2',
+ADD COLUMN IF NOT EXISTS ah_line_band TEXT,                    -- 'tight' | 'deep', only used when market_focus = 'asian_handicap'
+ADD COLUMN IF NOT EXISTS ou_line_band TEXT,                    -- 'low' | 'mid' | 'high', only used when market_focus = 'over_under'
+ADD COLUMN IF NOT EXISTS decision_style TEXT DEFAULT 'balanced',      -- anticipatory | confirmatory | balanced
+ADD COLUMN IF NOT EXISTS confirmation_tolerance TEXT DEFAULT 'adaptive', -- aggressive | conservative | adaptive
+ADD COLUMN IF NOT EXISTS score_state_mode TEXT DEFAULT 'momentum_only',  -- favor_chasing | favor_leading | momentum_only
+ADD COLUMN IF NOT EXISTS side_bias TEXT DEFAULT 'none',        -- home | away | favorite | underdog | none
+ADD COLUMN IF NOT EXISTS risk_profile TEXT DEFAULT 'flat_stake',      -- conservative | aggressive | martingale | flat_stake
+ADD COLUMN IF NOT EXISTS reaction_latency_ms INTEGER DEFAULT 3000,
+ADD COLUMN IF NOT EXISTS context_venue_aware BOOLEAN DEFAULT false,
+ADD COLUMN IF NOT EXISTS context_weather_aware BOOLEAN DEFAULT false,
+ADD COLUMN IF NOT EXISTS context_competition_tier_aware BOOLEAN DEFAULT false,
+ADD COLUMN IF NOT EXISTS wildcard_trait TEXT DEFAULT 'none';
+
+-- Replace the old technical-indicator phase enum with the new 5-phase set.
+ALTER TABLE public.agents DROP CONSTRAINT IF EXISTS check_phase_weighting;
+ALTER TABLE public.agents ADD CONSTRAINT check_phase_weighting
+  CHECK (phase_weighting IN ('early','pre_halftime','second_half','late_stoppage','full_match'));
+
+ALTER TABLE public.agents ADD CONSTRAINT check_market_focus
+  CHECK (market_focus IN ('1x2','asian_handicap','over_under','multi_market'));
+ALTER TABLE public.agents ADD CONSTRAINT check_decision_style
+  CHECK (decision_style IN ('anticipatory','confirmatory','balanced'));
+ALTER TABLE public.agents ADD CONSTRAINT check_confirmation_tolerance
+  CHECK (confirmation_tolerance IN ('aggressive','conservative','adaptive'));
+ALTER TABLE public.agents ADD CONSTRAINT check_score_state_mode
+  CHECK (score_state_mode IN ('favor_chasing','favor_leading','momentum_only'));
+ALTER TABLE public.agents ADD CONSTRAINT check_side_bias
+  CHECK (side_bias IN ('home','away','favorite','underdog','none'));
+ALTER TABLE public.agents ADD CONSTRAINT check_risk_profile
+  CHECK (risk_profile IN ('conservative','aggressive','martingale','flat_stake'));
+ALTER TABLE public.agents ADD CONSTRAINT check_wildcard_trait
+  CHECK (wildcard_trait IN ('none','chaos_agent','comeback_romantic','revenge_trader',
+    'superstition','weather_prophet','rivalry_rage','bandwagon','contrarian',
+    'last_minute_believer','nostalgia_trader'));
+
 -- H. Match-Phase Weighting / I. Re-entry Rule / L. Risk Ceiling columns
 ALTER TABLE public.agents
 ADD COLUMN IF NOT EXISTS phase_weighting TEXT DEFAULT 'uniform',
@@ -188,7 +227,7 @@ BEGIN
   ) THEN
     ALTER TABLE public.agents
     ADD CONSTRAINT check_phase_weighting
-    CHECK (phase_weighting IN ('uniform', 'front_loaded', 'back_loaded', 'event_triggered'));
+    CHECK (phase_weighting IN ('early', 'pre_halftime', 'second_half', 'late_stoppage', 'full_match'));
   END IF;
 END $$;
 

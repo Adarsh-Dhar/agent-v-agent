@@ -5,7 +5,8 @@
  * Fetches details for France vs Spain (FixtureId: 18237038) and stores them in fra-esp-logs.txt
  *
  * Usage:
- *   node scripts/fetchFraEsp.js
+ *   node scripts/fetchFraEsp.js              # one-shot fetch
+ *   node scripts/fetchFraEsp.js --poll 30    # poll every 30 seconds
  */
 
 import 'dotenv/config';
@@ -21,18 +22,17 @@ const LOG_FILE = path.join(ROOT, 'fra-esp-logs.txt');
 const FIXTURE_ID = '18237038';
 const MATCH_NAME = 'France vs Spain';
 
-async function main() {
-  if (!isConfigured) {
-    console.error(
-      'TxLINE is not configured yet.\n' +
-        'Run `npm run activate:txline` first to subscribe on-chain and activate ' +
-        'API access, then re-run this script.'
-    );
-    process.exit(1);
+// Parse CLI args
+function parseArgs() {
+  const args = process.argv.slice(2);
+  const out = { pollSeconds: null };
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--poll') out.pollSeconds = Number(args[++i]);
   }
+  return out;
+}
 
-  console.log(`Fetching ${MATCH_NAME} (FixtureId: ${FIXTURE_ID})...`);
-  
+async function fetchData() {
   let output = `=== ${MATCH_NAME} (FixtureId: ${FIXTURE_ID}) ===\n`;
   output += `Fetched at: ${new Date().toISOString()}\n\n`;
 
@@ -114,6 +114,33 @@ async function main() {
   // Write to file
   fs.writeFileSync(LOG_FILE, output);
   console.log(`\n✓ Results saved to ${LOG_FILE}`);
+}
+
+async function main() {
+  if (!isConfigured) {
+    console.error(
+      'TxLINE is not configured yet.\n' +
+        'Run `npm run activate:txline` first to subscribe on-chain and activate ' +
+        'API access, then re-run this script.'
+    );
+    process.exit(1);
+  }
+
+  const { pollSeconds } = parseArgs();
+  console.log(`Fetching ${MATCH_NAME} (FixtureId: ${FIXTURE_ID})...`);
+
+  if (!pollSeconds) {
+    await fetchData();
+    return;
+  }
+
+  console.log(`Polling every ${pollSeconds}s. Ctrl+C to stop.`);
+  await fetchData();
+  
+  setInterval(async () => {
+    console.log(`\n[${new Date().toISOString()}] Polling...`);
+    await fetchData();
+  }, pollSeconds * 1000);
 }
 
 main().catch((err) => {

@@ -9,16 +9,14 @@ import axios from 'axios';
 
 const SERVER_URL = process.env.SERVER_URL || 'http://localhost:3000';
 
-// Factor choices based on the strategy design doc
+// Factor choices based on the 10-factor config
 const FACTORS = {
-  signal: [
-    'odds-movement',
-    'score_state',
-    'mean_reversion',
-    'momentum',
-    'time_decay',
-    'volatility_spike'
-  ],
+  market_focus: ['1x2', 'asian_handicap', 'over_under', 'multi_market'],
+  decision_style: ['anticipatory', 'confirmatory', 'balanced'],
+  confirmation_tolerance: ['aggressive', 'conservative', 'adaptive'],
+  score_state_mode: ['favor_chasing', 'favor_leading', 'momentum_only'],
+  side_bias: ['home', 'away', 'favorite', 'underdog', 'none'],
+  risk_profile: ['conservative', 'aggressive', 'martingale', 'flat_stake'],
   position_sizing: [
     'fixed',
     'percent_of_budget',
@@ -45,15 +43,29 @@ const FACTORS = {
     'llm_reflective'
   ],
   phase_weighting: [
-    'uniform',
-    'front_loaded',
-    'back_loaded',
-    'event_triggered'
+    'early',
+    'pre_halftime',
+    'second_half',
+    'late_stoppage',
+    'full_match'
   ],
   reentry_rule: [
     'no_reentry',
     'immediate_reentry',
     'capped_reentry'
+  ],
+  wildcard_trait: [
+    'none',
+    'chaos_agent',
+    'comeback_romantic',
+    'revenge_trader',
+    'superstition',
+    'weather_prophet',
+    'rivalry_rage',
+    'bandwagon',
+    'contrarian',
+    'last_minute_believer',
+    'nostalgia_trader'
   ]
 };
 
@@ -68,8 +80,23 @@ function randomInt(min, max) {
 function generateRandomConfig() {
   console.log('\n🎲 Randomizing strategy factors...\n');
 
-  const signal = randomChoice(FACTORS.signal);
-  console.log(`📡 Signal Type: ${signal}`);
+  const marketFocus = randomChoice(FACTORS.market_focus);
+  console.log(`🎯 Market Focus: ${marketFocus}`);
+
+  const decisionStyle = randomChoice(FACTORS.decision_style);
+  console.log(`🧠 Decision Style: ${decisionStyle}`);
+
+  const confirmationTolerance = randomChoice(FACTORS.confirmation_tolerance);
+  console.log(`✅ Confirmation Tolerance: ${confirmationTolerance}`);
+
+  const scoreStateMode = randomChoice(FACTORS.score_state_mode);
+  console.log(`� Score-State Mode: ${scoreStateMode}`);
+
+  const sideBias = randomChoice(FACTORS.side_bias);
+  console.log(`⚖️  Side Bias: ${sideBias}`);
+
+  const riskProfile = randomChoice(FACTORS.risk_profile);
+  console.log(`💎 Risk Profile: ${riskProfile}`);
 
   const sizing = randomChoice(FACTORS.position_sizing);
   console.log(`💰 Position Sizing: ${sizing}`);
@@ -96,6 +123,12 @@ function generateRandomConfig() {
   console.log(`⏱️  Match-Phase Weighting: ${phaseWeighting}`);
   console.log(`♻️  Re-entry Rule: ${reentryRule} (max_reentries: ${maxReentries ?? 'unlimited'})`);
 
+  const reactionLatency = randomInt(0, 30000);
+  console.log(`⏱️  Reaction Latency: ${reactionLatency}ms`);
+
+  const wildcardTrait = randomChoice(FACTORS.wildcard_trait);
+  console.log(`🎲 Wildcard Trait: ${wildcardTrait}`);
+
   // L. Risk Ceiling: cap any single stake, and halt entirely past a drawdown limit.
   const maxExposurePct = randomInt(20, 50);
   const maxDrawdownStopPct = randomInt(15, 40);
@@ -103,7 +136,12 @@ function generateRandomConfig() {
   console.log(`🛑 Max Drawdown Stop: ${maxDrawdownStopPct}%`);
 
   const config = {
-    signal_type: signal,
+    market_focus: marketFocus,
+    decision_style: decisionStyle,
+    confirmation_tolerance: confirmationTolerance,
+    score_state_mode: scoreStateMode,
+    side_bias: sideBias,
+    risk_profile: riskProfile,
     position_sizing: sizing,
     exit_rule: exit,
     aggression: aggression,
@@ -112,16 +150,20 @@ function generateRandomConfig() {
     phase_weighting: phaseWeighting,
     reentry_rule: reentryRule,
     max_reentries: maxReentries,
+    reaction_latency_ms: reactionLatency,
+    wildcard_trait: wildcardTrait,
     max_exposure_pct: maxExposurePct,
     max_drawdown_stop_pct: maxDrawdownStopPct,
   };
 
-  // Add signal-specific parameters
-  if (signal === 'odds-movement' || signal === 'odds_movement') {
-    config.odds_threshold = randomInt(2, 10);
-    config.odds_timeframe = randomInt(2, 10);
-    console.log(`   └─ Odds Threshold: ${config.odds_threshold}%`);
-    console.log(`   └─ Odds Timeframe: ${config.odds_timeframe} minutes`);
+  // Add market-specific parameters
+  if (marketFocus === 'asian_handicap') {
+    config.ah_line_band = randomChoice(['tight', 'deep']);
+    console.log(`   └─ AH Line Band: ${config.ah_line_band}`);
+  }
+  if (marketFocus === 'over_under') {
+    config.ou_line_band = randomChoice(['low', 'mid', 'high']);
+    console.log(`   └─ OU Line Band: ${config.ou_line_band}`);
   }
 
   // Add sizing-specific parameters
@@ -146,6 +188,10 @@ function generateRandomConfig() {
     config.cooldown_minutes = randomInt(1, 5);
     console.log(`   └─ Cooldown: ${config.cooldown_minutes} minutes`);
   }
+  if (aggression === 'confirmation') {
+    config.confirmation_threshold = randomInt(2, 3);
+    console.log(`   └─ Confirmation Threshold: ${config.confirmation_threshold}`);
+  }
 
   console.log();
   return config;
@@ -166,18 +212,19 @@ async function createAndRunAgent(matchId, budgetCap) {
     config: {
       name: `Random Agent ${Date.now()}`,
       description: 'Auto-generated random strategy agent',
-      signal: {
-        type: config.signal_type,
-        threshold: config.odds_threshold,
-        timeframe: config.odds_timeframe,
-        secondary: null,
-        volatility_threshold: config.volatility_threshold,
-        volatility_timeframe: config.volatility_timeframe,
-        mean_reversion_threshold: config.mean_reversion_threshold,
-        momentum_threshold: config.momentum_threshold,
-        time_decay_start: config.time_decay_start,
-        time_decay_end: config.time_decay_end
-      },
+      market_focus: config.market_focus,
+      ah_line_band: config.ah_line_band || null,
+      ou_line_band: config.ou_line_band || null,
+      decision_style: config.decision_style,
+      confirmation_tolerance: config.confirmation_tolerance,
+      score_state_mode: config.score_state_mode,
+      side_bias: config.side_bias,
+      risk_profile: config.risk_profile,
+      reaction_latency_ms: config.reaction_latency_ms,
+      context_venue_aware: false,
+      context_weather_aware: false,
+      context_competition_tier_aware: false,
+      wildcard_trait: config.wildcard_trait,
       sizing: {
         type: config.position_sizing,
         percentage: config.percentage_stake,
