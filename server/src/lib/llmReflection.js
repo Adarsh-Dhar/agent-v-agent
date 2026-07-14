@@ -284,15 +284,15 @@ export async function reflectOnStrategy(agentId, currentConfig, tradeLog, perfor
   }
 }
 
-export async function shouldTriggerReflection(agentId, lastReflectionTimestamp) {
+export async function shouldTriggerReflection(agentId, lastReflectionTimestamp, tradeCount) {
   // Trigger reflection if:
   // 1. Agent has llm_reflection_enabled = true
   // 2. Last reflection was > 1 match ago (or never)
-  // 3. Agent has completed trades
+  // 3. Agent has completed trades (passed as tradeCount param)
 
   const { data: agent, error } = await supabase
     .from('agents')
-    .select('llm_reflection_enabled, last_reflection_timestamp, trade_count')
+    .select('llm_reflection_enabled')
     .eq('id', agentId)
     .single();
 
@@ -305,17 +305,17 @@ export async function shouldTriggerReflection(agentId, lastReflectionTimestamp) 
     return false;
   }
 
-  if (agent.trade_count === 0) {
+  if (tradeCount === 0) {
     return false;
   }
 
   // If never reflected, trigger
-  if (!agent.last_reflection_timestamp) {
+  if (!lastReflectionTimestamp) {
     return true;
   }
 
   // If last reflection was > 1 hour ago, trigger (adjust based on match duration)
-  const lastReflection = new Date(agent.last_reflection_timestamp);
+  const lastReflection = new Date(lastReflectionTimestamp);
   const hoursSinceReflection = (Date.now() - lastReflection.getTime()) / (1000 * 60 * 60);
   
   return hoursSinceReflection > 1;

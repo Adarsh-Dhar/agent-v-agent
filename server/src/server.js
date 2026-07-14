@@ -5,7 +5,7 @@ import { fileURLToPath } from 'url';
 import path from 'path';
 
 import { supabase } from './lib/supabaseClient.js';
-import { validateAgentConfig } from './lib/validateConfig.js';
+import { validateAgentConfig, validateRunConfig } from './lib/validateConfig.js';
 
 dotenv.config();
 
@@ -17,11 +17,9 @@ app.use(express.json());
 
 /**
  * POST /agents
- * Body example:
+ * Body example (strategy config only, no match/balance):
  * {
- *   "match_id": "wc-2026-final",
  *   "owner": "alice",
- *   "budget_cap": 500,
  *   "config": {
  *     "name": "My Agent",
  *     "description": "A momentum-based trader",
@@ -75,7 +73,7 @@ app.post('/agents', async (req, res) => {
     return res.status(400).json({ error: err.message });
   }
 
-  const { match_id, owner, budget_cap, config } = req.body;
+  const { owner, config } = req.body;
 
   // Map nested config object to individual columns
   const agentData = {
@@ -113,11 +111,7 @@ app.post('/agents', async (req, res) => {
     llm_reflection_enabled: config?.adaptivity === 'llm_reflective',
     max_exposure_pct: config?.risk_ceiling?.max_exposure_pct || null,
     max_drawdown_stop_pct: config?.risk_ceiling?.max_drawdown_stop_pct || null,
-    match_id: match_id || null,
     owner: owner || null,
-    budget_cap: budget_cap || 5000,
-    balance: budget_cap || 5000,
-    status: 'active',
   };
 
   // 1. Insert the agent row in Supabase first, so we have an agent_id.
@@ -131,33 +125,14 @@ app.post('/agents', async (req, res) => {
     return res.status(500).json({ error: `Supabase insert failed: ${error.message}` });
   }
 
-  // 2. Spawn the agent runner as its own child process, passing agent_id.
-  //    'inherit' pipes the child's stdout/stderr straight to this server's
-  //    terminal, so you see each agent's decisions live as it runs.
-  const child = spawn('node', [RUNNER_PATH, agent.id], {
-    stdio: 'inherit',
-    detached: false,
-  });
-
-  child.on('exit', (code) => {
-    console.log(`[server] agent ${agent.id} process exited with code ${code}`);
-  });
-
-  child.on('error', (err) => {
-    console.error(`[server] failed to spawn agent ${agent.id}:`, err.message);
-  });
-
-  // 3. Respond immediately with the agent_id; the agent keeps running
-  //    in the background and updates itself in Supabase.
   return res.status(201).json({
     agent_id: agent.id,
     status: 'created',
-    pid: child.pid,
-    message: 'Agent created and started. Watch this server terminal for live logs.',
+    message: 'Agent created. Use POST /agents/:id/run to start a session.',
   });
 });
 
-/** GET /agents/:id - fetch current state (balance, PnL, status) */
+/** GET /agents/:id - fetch strategy config only (no balance/PnL) */
 app.get('/agents/:id', async (req, res) => {
   const { data, error } = await supabase
     .from('agents')
@@ -167,6 +142,54 @@ app.get('/agents/:id', async (req, res) => {
 
   if (error) return res.status(404).json({ error: 'Agent not found' });
   return res.json(data);
+});
+
+/** POST /agents/:id/run - start a new session with specific match and balance */
+app.post('/agents/:id/run', async (req, res) => {
+  try {
+    validateRunConfig(req.body);
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+  const { match_id, budget_cap } = req.body;
+
+  const { data: agent, error: agentErr } = await supabase
+    .from('agents').select('id').eq('id', req.params.id).single();
+  if (agentErr) return res.status(404).json({ error: 'Agent not found' });
+
+  const { data: run, error } = await supabase
+    .from('agent_runs')
+    .insert({ agent_id: agent.id, match_id, budget_cap, balance: budget_cap, status: 'active' })
+    .select().single();
+  if (error) return res.status(500).json({ error: error.message });
+
+  const child = spawn('node', [RUNNER_PATH, run.id], { stdio: 'inherit', detached: false });
+  child.on('exit', (code) => console.log(`[server] run ${run.id} exited code ${code}`));
+
+  return res.status(201).json({ run_id: run.id, agent_id: agent.id, status: 'created', pid: child.pid });
+});
+
+/** GET /runs/:id - fetch run state (balance, PnL, status) */
+app.get('/runs/:id', async (req, res) => {
+  const { data, error } = await supabase
+    .from('agent_runs')
+    .select('*')
+    .eq('id', req.params.id)
+    .single();
+
+  if (error) return res.status(404).json({ error: 'Run not found' });
+  return res.json(data);
+});
+
+/** POST /runs/:id/stop - flips status to 'stopped'; the runner polls this and exits */
+app.post('/runs/:id/stop', async (req, res) => {
+  const { error } = await supabase
+    .from('agent_runs')
+    .update({ status: 'stopped' })
+    .eq('id', req.params.id);
+
+  if (error) return res.status(500).json({ error: error.message });
+  return res.json({ status: 'stopping' });
 });
 
 /** POST /agents/:id/stop - flips status to 'stopped'; the runner polls this and exits */
@@ -180,11 +203,11 @@ app.post('/agents/:id/stop', async (req, res) => {
   return res.json({ status: 'stopping' });
 });
 
-/** GET /matches/:matchId/leaderboard - agents ranked by total PnL for a match */
+/** GET /matches/:matchId/leaderboard - runs ranked by total PnL for a match */
 app.get('/matches/:matchId/leaderboard', async (req, res) => {
   const { data, error } = await supabase
-    .from('agents')
-    .select('id, owner, balance, realized_pnl, unrealized_pnl, trade_count, status')
+    .from('agent_runs')
+    .select('id, agent_id, match_id, balance, realized_pnl, unrealized_pnl, trade_count, status, agents(name, owner)')
     .eq('match_id', req.params.matchId)
     .order('balance', { ascending: false });
 

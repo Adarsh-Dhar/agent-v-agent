@@ -1,7 +1,7 @@
-// This file is spawned as its own child process per agent, so each agent's
+// This file is spawned as its own child process per run, so each run's
 // activity shows up as its own running process with its own terminal output.
 //
-// Usage: node src/agentRunner.js <agent_id>
+// Usage: node src/agentRunner.js <run_id>
 
 import { supabase } from './lib/supabaseClient.js';
 import { fetchOddsSnapshot } from './lib/txline.js';
@@ -9,9 +9,9 @@ import { evaluateSignal, computeStake } from './lib/strategyEngine.js';
 import { reflectOnStrategy, shouldTriggerReflection } from './lib/llmReflection.js';
 import { selfAdjust } from './lib/selfAdjust.js';
 
-const agentId = process.argv[2];
-if (!agentId) {
-  console.error('Usage: node agentRunner.js <agent_id>');
+const runId = process.argv[2];
+if (!runId) {
+  console.error('Usage: node agentRunner.js <run_id>');
   process.exit(1);
 }
 
@@ -26,26 +26,31 @@ let signalStreak = { action: null, count: 0 }; // consecutive same-direction sig
 let peakBalance = null; // highest balance seen so far, used by the max-drawdown risk ceiling
 
 function log(...args) {
-  console.log(`[agent ${agentId}]`, ...args);
+  console.log(`[run ${runId}]`, ...args);
 }
 
-async function loadAgent() {
-  const { data, error } = await supabase.from('agents').select('*').eq('id', agentId).single();
-  if (error) throw new Error(`Failed to load agent ${agentId}: ${error.message}`);
-  return data;
+async function loadState() {
+  const { data: run, error: runErr } = await supabase.from('agent_runs').select('*').eq('id', runId).single();
+  if (runErr) throw new Error(`Failed to load run ${runId}: ${runErr.message}`);
+
+  const { data: config, error: cfgErr } = await supabase.from('agents').select('*').eq('id', run.agent_id).single();
+  if (cfgErr) throw new Error(`Failed to load agent ${run.agent_id}: ${cfgErr.message}`);
+
+  return { ...config, ...run, agent_id: run.agent_id, run_id: run.id };
 }
 
-async function updateAgent(fields) {
+async function updateRun(fields) {
   const { error } = await supabase
-    .from('agents')
+    .from('agent_runs')
     .update({ ...fields, updated_at: new Date().toISOString() })
-    .eq('id', agentId);
-  if (error) log('WARN: failed to update agent row:', error.message);
+    .eq('id', runId);
+  if (error) log('WARN: failed to update run row:', error.message);
 }
 
 async function recordTrade(agent, side, odds, stake, reason) {
   const { error } = await supabase.from('trades').insert({
-    agent_id: agentId,
+    agent_id: agent.agent_id,
+    run_id: runId,
     match_id: agent.match_id,
     side,
     odds,
@@ -75,7 +80,7 @@ async function closePosition(agent, snapshot, reason) {
     `CLOSE ${position.side} stake=${position.stake} pnl=${realized.toFixed(2)} -> balance=${newBalance.toFixed(2)} reason=${reason}` 
   );
   await recordTrade(agent, `close_${position.side}`, snapshot.odds, position.stake, reason);
-  await updateAgent({
+  await updateRun({
     balance: newBalance,
     realized_pnl: newRealizedTotal,
     unrealized_pnl: 0,
@@ -195,7 +200,7 @@ async function checkMaxDrawdownStop(agent) {
   const drawdownPct = ((peakBalance - agent.balance) / peakBalance) * 100;
   if (drawdownPct >= agent.max_drawdown_stop_pct) {
     log(`RISK CEILING: drawdown ${drawdownPct.toFixed(1)}% >= max ${agent.max_drawdown_stop_pct}%, halting agent.`);
-    await updateAgent({ status: 'stopped' });
+    await updateRun({ status: 'stopped' });
     return true;
   }
   return false;
@@ -210,13 +215,13 @@ async function checkMaxDrawdownStop(agent) {
 async function maybeReflect(agent) {
   if (!agent.adaptivity_mode || agent.adaptivity_mode === 'static') return;
 
-  const shouldReflect = await shouldTriggerReflection(agentId, agent.last_reflection_timestamp);
+  const shouldReflect = await shouldTriggerReflection(agent.agent_id, agent.last_reflection_timestamp, agent.trade_count);
   if (!shouldReflect) return;
 
   const { data: tradeLog, error } = await supabase
     .from('trades')
     .select('*')
-    .eq('agent_id', agentId)
+    .eq('run_id', runId)
     .order('created_at', { ascending: true });
 
   if (error) {
@@ -244,11 +249,14 @@ async function maybeReflect(agent) {
   if (agent.adaptivity_mode === 'self_adjusting') {
     result = selfAdjust(agent, tradeLog || [], performanceSummary);
     if (result.success) {
-      await updateAgent({
-        odds_threshold: result.config.odds_threshold,
-        stop_loss: result.config.stop_loss,
-        last_reflection_timestamp: new Date().toISOString(),
-      });
+      await supabase
+        .from('agents')
+        .update({
+          odds_threshold: result.config.odds_threshold,
+          stop_loss: result.config.stop_loss,
+          last_reflection_timestamp: new Date().toISOString(),
+        })
+        .eq('id', agent.agent_id);
       log('adaptivity: self-adjust applied, thresholds updated.');
     } else {
       log(`adaptivity: self-adjust skipped: ${result.error}`);
@@ -256,7 +264,7 @@ async function maybeReflect(agent) {
   } else {
     // llm_reflective
     if (!agent.llm_reflection_enabled) return;
-    result = await reflectOnStrategy(agentId, agent, tradeLog || [], performanceSummary);
+    result = await reflectOnStrategy(agent.agent_id, agent, tradeLog || [], performanceSummary);
     if (result.success) {
       log('adaptivity: LLM reflection applied, config updated.');
     } else {
@@ -285,7 +293,7 @@ async function tick(agent) {
   // that must be evaluated every tick regardless of whether a new signal fires.
   if (position) {
     const unrealized = markToMarket(position.odds, snapshot.odds, position.side, position.stake);
-    await updateAgent({ unrealized_pnl: unrealized });
+    await updateRun({ unrealized_pnl: unrealized });
 
     const exitRule = agent.exit_rule;
     if (exitRule === 'stop-loss' || exitRule === 'stop_loss_take_profit') {
@@ -342,22 +350,22 @@ async function tick(agent) {
 
     log(`OPEN ${decision.action} stake=${stake.toFixed(2)} @odds=${snapshot.odds} reason=${decision.reason}`);
     await recordTrade(agent, decision.action, snapshot.odds, stake, decision.reason);
-    await updateAgent({ trade_count: newTradeCount, status: 'running' });
+    await updateRun({ trade_count: newTradeCount, status: 'running' });
     agent.trade_count = newTradeCount;
   }
 }
 
 async function main() {
   log('starting up...');
-  let agent = await loadAgent();
+  let agent = await loadState();
   log(`loaded config: signal=${agent.signal_type} sizing=${agent.position_sizing} match=${agent.match_id} budget=${agent.budget_cap}`);
   peakBalance = agent.balance;
 
-  await updateAgent({ status: 'running', pid: process.pid });
+  await updateRun({ status: 'running', pid: process.pid });
 
   const interval = setInterval(async () => {
     try {
-      agent = await loadAgent(); // refresh in case budget/status changed externally
+      agent = await loadState(); // refresh in case budget/status changed externally
       if (agent.status === 'stopped' || agent.status === 'inactive') {
         log('status=stopped, shutting down.');
         clearInterval(interval);
@@ -366,18 +374,18 @@ async function main() {
       await tick(agent);
     } catch (err) {
       log('ERROR during tick:', err.message);
-      await updateAgent({ status: 'error' });
+      await updateRun({ status: 'error' });
     }
   }, POLL_INTERVAL_MS);
 
   process.on('SIGINT', async () => {
     log('received SIGINT, marking stopped.');
-    await updateAgent({ status: 'stopped' });
+    await updateRun({ status: 'stopped' });
     process.exit(0);
   });
 }
 
 main().catch((err) => {
-  console.error(`[agent ${agentId}] FATAL:`, err);
+  console.error(`[run ${runId}] FATAL:`, err);
   process.exit(1);
 });

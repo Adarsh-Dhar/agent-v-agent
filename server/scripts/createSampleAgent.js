@@ -3,9 +3,7 @@ import axios from 'axios';
 const SERVER_URL = process.env.SERVER_URL || 'http://localhost:5000';
 
 const sampleAgent = {
-  match_id: "wc-2026-final",
   owner: "demo_user",
-  budget_cap: 10000,
   config: {
     name: "Momentum Trader",
     description: "A momentum-based trader that rides odds movements with moderate risk management",
@@ -57,16 +55,27 @@ async function createSampleAgent() {
     console.log('Creating sample agent...');
     console.log('Configuration:', JSON.stringify(sampleAgent, null, 2));
     
-    const response = await axios.post(`${SERVER_URL}/agents`, sampleAgent);
+    // Step 1: Create agent with strategy config only
+    const agentResponse = await axios.post(`${SERVER_URL}/agents`, sampleAgent);
+    const agentId = agentResponse.data.agent_id;
     
     console.log('\n✅ Agent created successfully!');
-    console.log('Agent ID:', response.data.agent_id);
-    console.log('Status:', response.data.status);
-    console.log('PID:', response.data.pid);
-    console.log('\nMessage:', response.data.message);
+    console.log('Agent ID:', agentId);
+    console.log('Status:', agentResponse.data.status);
+    console.log('Message:', agentResponse.data.message);
+
+    // Step 2: Run the agent with match_id and budget_cap
+    const runResponse = await axios.post(`${SERVER_URL}/agents/${agentId}/run`, {
+      match_id: "wc-2026-final",
+      budget_cap: 10000
+    });
+
+    console.log('\n✅ Agent run started successfully!');
+    console.log('Run ID:', runResponse.data.run_id);
+    console.log('PID:', runResponse.data.pid);
     
   } catch (error) {
-    console.error('\n❌ Failed to create agent:');
+    console.error('\n❌ Failed to create/run agent:');
     if (error.response) {
       console.error('Status:', error.response.status);
       console.error('Error:', error.response.data);

@@ -73,6 +73,31 @@ CREATE INDEX IF NOT EXISTS trades_match_id_idx ON public.trades(match_id);
 -- Create index on agents.match_id for faster queries
 CREATE INDEX IF NOT EXISTS agents_match_id_idx ON public.agents(match_id);
 
+-- Create agent_runs table for session-based execution
+CREATE TABLE IF NOT EXISTS public.agent_runs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  agent_id UUID NOT NULL REFERENCES public.agents(id) ON DELETE CASCADE,
+  match_id TEXT NOT NULL,
+  budget_cap NUMERIC NOT NULL DEFAULT 5000,
+  balance NUMERIC NOT NULL DEFAULT 0,
+  realized_pnl NUMERIC DEFAULT 0,
+  unrealized_pnl NUMERIC DEFAULT 0,
+  trade_count INTEGER DEFAULT 0,
+  status TEXT DEFAULT 'active',
+  pid INTEGER,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS agent_runs_agent_id_idx ON public.agent_runs(agent_id);
+CREATE INDEX IF NOT EXISTS agent_runs_match_id_idx ON public.agent_runs(match_id);
+
+-- Add run_id column to trades table
+ALTER TABLE public.trades
+  ADD COLUMN IF NOT EXISTS run_id UUID REFERENCES public.agent_runs(id) ON DELETE CASCADE;
+
+CREATE INDEX IF NOT EXISTS trades_run_id_idx ON public.trades(run_id);
+
 -- Create reflection failures table for logging LLM reflection failures
 CREATE TABLE IF NOT EXISTS public.reflection_failures (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

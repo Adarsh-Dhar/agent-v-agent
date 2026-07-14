@@ -5,13 +5,9 @@
  * Example: node scripts/createRandomAgent.js wc-2026-final --budget 10000
  */
 
-import { supabase } from '../src/lib/supabaseClient.js';
-import { spawn } from 'child_process';
-import { fileURLToPath } from 'url';
-import path from 'path';
+import axios from 'axios';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const RUNNER_PATH = path.join(__dirname, '../src/agentRunner.js');
+const SERVER_URL = process.env.SERVER_URL || 'http://localhost:3000';
 
 // Factor choices based on the strategy design doc
 const FACTORS = {
@@ -164,54 +160,80 @@ async function createAndRunAgent(matchId, budgetCap) {
   console.log('\nGenerated configuration:');
   console.log(JSON.stringify(config, null, 2));
 
+  // Step 1: Create agent with strategy config only
   const agentData = {
-    name: `Random Agent ${Date.now()}`,
-    description: 'Auto-generated random strategy agent',
-    match_id: matchId,
     owner: 'random_generator',
-    budget_cap: budgetCap,
-    balance: budgetCap,
-    status: 'active',
-    ...config
+    config: {
+      name: `Random Agent ${Date.now()}`,
+      description: 'Auto-generated random strategy agent',
+      signal: {
+        type: config.signal_type,
+        threshold: config.odds_threshold,
+        timeframe: config.odds_timeframe,
+        secondary: null,
+        volatility_threshold: config.volatility_threshold,
+        volatility_timeframe: config.volatility_timeframe,
+        mean_reversion_threshold: config.mean_reversion_threshold,
+        momentum_threshold: config.momentum_threshold,
+        time_decay_start: config.time_decay_start,
+        time_decay_end: config.time_decay_end
+      },
+      sizing: {
+        type: config.position_sizing,
+        percentage: config.percentage_stake,
+        fixed_stake: config.fixed_stake,
+        confidence_weighted: config.confidence_weighted || false
+      },
+      exit: {
+        type: config.exit_rule,
+        stop_loss: config.stop_loss,
+        take_profit: config.take_profit,
+        time_based_exit_time: config.time_based_exit_time || null
+      },
+      aggression: {
+        type: config.aggression,
+        cooldown_minutes: config.cooldown_minutes,
+        confirmation_threshold: config.confirmation_threshold || 2
+      },
+      direction: config.direction_bias,
+      target_selection: config.target_selection || 'both',
+      phase_weighting: config.phase_weighting,
+      reentry_rule: config.reentry_rule,
+      max_reentries: config.max_reentries,
+      portfolio_behavior: config.portfolio_behavior || 'independent',
+      adaptivity: config.adaptivity_mode,
+      risk_ceiling: {
+        max_exposure_pct: config.max_exposure_pct,
+        max_drawdown_stop_pct: config.max_drawdown_stop_pct
+      }
+    }
   };
 
-  // Insert agent into database
-  const { data: agent, error } = await supabase
-    .from('agents')
-    .insert(agentData)
-    .select()
-    .single();
+  try {
+    const agentResponse = await axios.post(`${SERVER_URL}/agents`, agentData);
+    const agentId = agentResponse.data.agent_id;
+    console.log(`\n✓ Agent created with ID: ${agentId}`);
 
-  if (error) {
-    console.error('Failed to create agent:', error.message);
+    // Step 2: Run the agent with match_id and budget_cap
+    const runResponse = await axios.post(`${SERVER_URL}/agents/${agentId}/run`, {
+      match_id: matchId,
+      budget_cap: budgetCap
+    });
+
+    console.log(`✓ Agent run started with ID: ${runResponse.data.run_id}`);
+    console.log(`✓ PID: ${runResponse.data.pid}`);
+    console.log('\nAgent is now running. Watch server terminal for live trading logs.');
+
+  } catch (error) {
+    console.error('\n❌ Failed to create/run agent:');
+    if (error.response) {
+      console.error('Status:', error.response.status);
+      console.error('Error:', error.response.data);
+    } else {
+      console.error('Message:', error.message);
+    }
     process.exit(1);
   }
-
-  console.log(`\n✓ Agent created with ID: ${agent.id}`);
-
-  // Spawn the agent runner
-  const child = spawn('node', [RUNNER_PATH, agent.id], {
-    stdio: 'inherit',
-    detached: false,
-  });
-
-  console.log(`✓ Agent runner started with PID: ${child.pid}`);
-  console.log('\nAgent is now running. Watch terminal for live trading logs.');
-
-  child.on('exit', (code) => {
-    console.log(`\nAgent process exited with code ${code}`);
-  });
-
-  child.on('error', (err) => {
-    console.error(`Failed to spawn agent:`, err.message);
-  });
-
-  // Keep the process running
-  process.on('SIGINT', () => {
-    console.log('\nStopping agent...');
-    child.kill('SIGINT');
-    process.exit(0);
-  });
 }
 
 // Parse command line arguments

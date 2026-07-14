@@ -27,14 +27,6 @@ const ADAPTIVITY = ['static', 'self_adjusting', 'llm_reflective'];
 export function validateAgentConfig(body) {
   const errors = [];
 
-  if (!body.match_id || typeof body.match_id !== 'string') {
-    errors.push('match_id is required (string) - the TxLINE match identifier.');
-  }
-
-  if (body.budget_cap !== undefined && (typeof body.budget_cap !== 'number' || body.budget_cap <= 0)) {
-    errors.push('budget_cap must be a positive number if provided.');
-  }
-
   const cfg = body.config || {};
 
   // Support both nested config and direct body properties
@@ -180,4 +172,19 @@ export function validateAgentConfig(body) {
   }
 
   return true;
+}
+
+/**
+ * Validates run-specific configuration (match_id, budget_cap).
+ * These are session-specific parameters, not permanent agent config.
+ */
+export function validateRunConfig(body) {
+  const errors = [];
+  if (!body.match_id || typeof body.match_id !== 'string') {
+    errors.push('match_id is required (string).');
+  }
+  if (body.budget_cap === undefined || typeof body.budget_cap !== 'number' || body.budget_cap <= 0) {
+    errors.push('budget_cap is required and must be a positive number.');
+  }
+  if (errors.length) throw new Error(errors.join(' '));
 }
