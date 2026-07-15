@@ -55,6 +55,7 @@ function plainRandomWalkTick() {
     minute: Math.floor(Math.random() * 90),
     event: null,
     timestamp: new Date().toISOString(),
+    isMock: true,
   };
 }
 
@@ -178,77 +179,180 @@ export async function txlineRequest(endpoint) {
 }
 
 /**
- * Market Focus resolver: given a raw TxLINE odds payload (or a mock snapshot
- * shaped like one) and an agent's market_focus/ah_line_band/ou_line_band,
- * pick the right price out of it.
- * [FEED-SHAPE TBD]: real TxLINE responses may expose `data.markets` /
- * `data.superOdds` (name TBD pending API docs) as an array of
- * { type: '1x2'|'asian_handicap'|'over_under', line, homeOdds, awayOdds, ... }.
- * Until that shape is confirmed against a live response, this falls back to
- * the single `data.odds` field for every market_focus value except when the
- * array is present, in which case it filters by type + line band.
+ * Market Focus resolver: given the RAW array returned by
+ * GET /api/odds/snapshot/{fixtureId} and an agent's
+ * market_focus/ah_line_band/ou_line_band, pick the right price out of it.
+ *
+ * CONFIRMED real shape (from a live fetch against fixture 18237038,
+ * France vs Spain, 2026-07-14): the response is not `{ markets: [...] }` —
+ * the top-level payload itself IS the array. Each element looks like:
+ *   {
+ *     FixtureId, SuperOddsType: '1X2_PARTICIPANT_RESULT' | 'ASIANHANDICAP_PARTICIPANT_GOALS' | 'OVERUNDER_PARTICIPANT_GOALS',
+ *     MarketPeriod: 'half=1' | null,   // null = full match
+ *     MarketParameters: 'line=-0.5' | null,
+ *     PriceNames: ['part1','draw','part2'] | ['part1','part2'] | ['over','under'],
+ *     Prices: [5394, 3628, 1855],       // decimal odds x1000 -- divide by 1000
+ *     ...
+ *   }
+ * There is no separate "1x2" market name; use SuperOddsType and always
+ * restrict to MarketPeriod === null (full match) unless a half-specific
+ * market is explicitly wanted.
  */
-function resolveMarketOdds(data, agent) {
+function parseLine(marketParameters) {
+  // "line=-0.5" -> -0.5 ; null -> null
+  if (!marketParameters) return null;
+  const match = /line=(-?[\d.]+)/.exec(marketParameters);
+  return match ? Number(match[1]) : null;
+}
+
+function priceFor(market, priceName) {
+  if (!market) return null;
+  const idx = market.PriceNames?.indexOf(priceName);
+  if (idx == null || idx < 0) return null;
+  const raw = market.Prices?.[idx];
+  return typeof raw === 'number' ? raw / 1000 : null; // Prices are decimal odds x1000
+}
+
+function resolveMarketOdds(marketsArray, agent) {
   const marketFocus = agent.market_focus || '1x2';
-  const markets = data.markets || data.superOdds; // name TBD, see note above
-  if (!Array.isArray(markets) || markets.length === 0) {
-    return data.odds || data.price || 1.9; // no multi-market data available, fall back
+
+  if (!Array.isArray(marketsArray) || marketsArray.length === 0) {
+    return null; // caller decides the fallback; do not silently invent 1.9 here
   }
+
+  const fullMatch = (m) => m.MarketPeriod === null || m.MarketPeriod === undefined;
+
   if (marketFocus === '1x2') {
-    return markets.find((m) => m.type === '1x2')?.price ?? data.odds ?? 1.9;
+    const market = marketsArray.find((m) => m.SuperOddsType === '1X2_PARTICIPANT_RESULT' && fullMatch(m));
+    // 'part1' = home (Participant1IsHome per fixtures feed), 'part2' = away.
+    return priceFor(market, 'part1');
   }
+
   if (marketFocus === 'asian_handicap') {
     const band = agent.ah_line_band || 'tight';
-    const candidates = markets.filter((m) => m.type === 'asian_handicap');
-    const sorted = [...candidates].sort((a, b) => Math.abs(a.line) - Math.abs(b.line));
+    const candidates = marketsArray.filter((m) => m.SuperOddsType === 'ASIANHANDICAP_PARTICIPANT_GOALS' && fullMatch(m));
+    const withLines = candidates
+      .map((m) => ({ m, line: parseLine(m.MarketParameters) }))
+      .filter((x) => x.line !== null);
+    const sorted = [...withLines].sort((a, b) => Math.abs(a.line) - Math.abs(b.line));
     const pick = band === 'tight' ? sorted[0] : sorted[sorted.length - 1];
-    return pick?.price ?? data.odds ?? 1.9;
+    return priceFor(pick?.m, 'part1');
   }
+
   if (marketFocus === 'over_under') {
     const band = agent.ou_line_band || 'mid';
-    const candidates = markets.filter((m) => m.type === 'over_under');
-    const sorted = [...candidates].sort((a, b) => a.line - b.line);
+    const candidates = marketsArray.filter((m) => m.SuperOddsType === 'OVERUNDER_PARTICIPANT_GOALS' && fullMatch(m));
+    const withLines = candidates
+      .map((m) => ({ m, line: parseLine(m.MarketParameters) }))
+      .filter((x) => x.line !== null);
+    const sorted = [...withLines].sort((a, b) => a.line - b.line);
     const idx = band === 'low' ? 0 : band === 'high' ? sorted.length - 1 : Math.floor(sorted.length / 2);
-    return sorted[idx]?.price ?? data.odds ?? 1.9;
+    return priceFor(sorted[idx]?.m, 'over');
   }
-  // multi_market: return the full array; strategyEngine decides per-tick which to act on.
-  return markets;
+
+  // multi_market: hand the whole raw array back. strategyEngine must be the
+  // one deciding per-tick which market to act on for this mode -- do NOT
+  // let this array reach the numeric pctChange math in evaluateSignal()
+  // un-narrowed, or it will break (NaN) since it expects a number.
+  return marketsArray;
 }
 
 /**
- * Fetches the latest odds snapshot for a match from TxLINE.
- * Routes to replay engine for replay matches (format: replay-{fixture-id}).
- * Falls back to a mock random-walk feed if no API credentials are configured,
- * so the agent runner can be demoed end-to-end without live credentials.
+ * GET /api/scores/snapshot/{fixtureId} does NOT return entries in
+ * chronological order. Confirmed against two independent fixtures
+ * (18222446 Argentina-Switzerland, 18237038 France-Spain): entries are one-
+ * per-distinct-Action-type, sorted ALPHABETICALLY by Action name
+ * ("action_amend", "action_discarded", "additional_time", "attack_possession",
+ * ... "yellow_card"), not by Ts/time. Taking scores[scores.length-1] or
+ * scores[0] picks whichever action name is last/first alphabetically, which
+ * has nothing to do with what actually happened most recently.
+ * The correct approach: find the highest-Ts entry that actually carries a
+ * Score object (many entries, e.g. 'connected'/'jersey'/'venue', don't).
+ * 'game_finalised' is a special case -- it has no Clock field at all, so
+ * minute has to fall back to whatever the last known clock was.
  */
-export async function fetchOddsSnapshot(matchId, agent = {}) {
-  // Check if this is a replay match
-  if (isReplayMatch(matchId)) {
-    return fetchReplaySnapshot(matchId);
+function extractLatestScoreState(scoresArray, previousMinute = 0) {
+  if (!Array.isArray(scoresArray) || scoresArray.length === 0) {
+    return { score: { home: 0, away: 0 }, minute: previousMinute, event: null, matchEnded: false };
   }
 
-  // Use mock feed if TXLINE_MOCK_DATASET is set (regardless of API credentials)
+  const finalEvent = scoresArray.find((e) => e.Action === 'game_finalised' || e.StatusId === 100);
+  const scoredEntries = scoresArray.filter((e) => e.Score);
+  const latestScored = scoredEntries.length
+    ? scoredEntries.reduce((a, b) => (b.Ts > a.Ts ? b : a))
+    : null;
+
+  const authoritative = finalEvent || latestScored;
+  const score = authoritative
+    ? {
+        home: authoritative.Score?.Participant1?.Total?.Goals ?? 0,
+        away: authoritative.Score?.Participant2?.Total?.Goals ?? 0,
+      }
+    : { home: 0, away: 0 };
+
+  const minute = authoritative?.Clock?.Seconds != null
+    ? Math.floor(authoritative.Clock.Seconds / 60)
+    : previousMinute; // game_finalised has no Clock -- hold last known minute
+
+  // Most recent event overall (by Ts), for score_state/anticipatory signals.
+  const mostRecentOverall = scoresArray.reduce((a, b) => (b.Ts > a.Ts ? b : a));
+
+  return {
+    score,
+    minute,
+    event: mostRecentOverall?.Action ?? null,
+    matchEnded: !!finalEvent,
+  };
+}
+
+/**
+ * Fetches the latest odds + score snapshot for a match from TxLINE and
+ * merges them into the single tick shape agentRunner.js/strategyEngine.js
+ * expect. Routes to replay engine for replay matches (format:
+ * replay-{fixture-id}). Falls back to a mock feed if no credentials are
+ * configured OR if either live call fails, so the pipeline still runs
+ * end-to-end without live credentials -- but the fallback is now tagged
+ * (`isMock: true`) instead of silently masquerading as real data.
+ */
+export async function fetchOddsSnapshot(fixtureId, agent = {}) {
+  if (isReplayMatch(fixtureId)) {
+    return fetchReplaySnapshot(fixtureId);
+  }
+
   if (process.env.TXLINE_MOCK_DATASET) {
     return mockTick();
   }
 
-  // Fallback to mock if credentials not configured
-  if (!TXLINE_API_ORIGIN || !TXLINE_WALLET_KEYPAIR_PATH) {
-    return mockTick();
+  if (!TXLINE_API_ORIGIN || !TXLINE_WALLET_KEYPAIR_PATH || !TXLINE_API_TOKEN) {
+    return { ...mockTick(), isMock: true };
   }
 
   try {
-    const data = await txlineRequest(`/api/v1/matches/${matchId}/odds/live`);
+    const [oddsArray, scoresArray] = await Promise.all([
+      txlineRequest(`/api/odds/snapshot/${fixtureId}`),
+      txlineRequest(`/api/scores/snapshot/${fixtureId}`),
+    ]);
+
+    const odds = resolveMarketOdds(oddsArray, agent);
+    if (odds === null) {
+      log(`No open odds market for fixture ${fixtureId} (market_focus=${agent.market_focus || '1x2'}).`);
+      return { ...mockTick(), isMock: true, mockReason: 'no_open_market' };
+    }
+
+    const { score, minute, event, matchEnded } = extractLatestScoreState(scoresArray, agent._lastKnownMinute ?? 0);
+
     return {
-      match_id: matchId,
-      odds: resolveMarketOdds(data, agent),
-      score: data.score || { home: 0, away: 0 },
-      minute: data.minute || 0,
-      event: data.event || null,
-      timestamp: data.timestamp || new Date().toISOString(),
+      match_id: fixtureId,
+      odds,
+      score,
+      minute,
+      event,
+      matchEnded,
+      timestamp: new Date().toISOString(),
+      isMock: false,
     };
   } catch (error) {
     log('TxLINE request failed, falling back to mock:', error.message);
-    return mockTick();
+    return { ...mockTick(), isMock: true, mockReason: error.message };
   }
 }

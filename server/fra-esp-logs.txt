@@ -1,21 +1,8 @@
 === France vs Spain (FixtureId: 18237038) ===
-Fetched at: 2026-07-14T22:50:17.609Z
+Fetched at: 2026-07-15T06:09:35.904Z
 
 --- FIXTURE DETAILS ---
-{
-  "Ts": 1783832400000,
-  "StartTime": 1784055600000,
-  "Competition": "World Cup",
-  "CompetitionId": 72,
-  "FixtureGroupId": 10115573,
-  "Participant1Id": 1999,
-  "Participant1": "France",
-  "Participant2Id": 3021,
-  "Participant2": "Spain",
-  "FixtureId": 18237038,
-  "Participant1IsHome": true,
-  "GameState": 1
-}
+Fixture not found in fixtures list
 
 --- ODDS ---
 []
