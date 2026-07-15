@@ -12,7 +12,9 @@
     "discover:txline": "node scripts/discoverTxlineEndpoints.js",
     "agent:create": "node scripts/createRandomAgent.js",
     "agent:simulate": "node scripts/simulateAgentTrading.js",
-    "agent:sample": "node scripts/createSampleAgent.js"
+    "agent:sample": "node scripts/createSampleAgent.js",
+    "agent:replay": "node scripts/replayLoggedFeed.js",
+    "agent:replay-live": "node scripts/liveReplayMatch.js"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.32.1",
@@ -26,5 +28,6 @@
     "tweetnacl": "^1.0.3",
     "uuid": "^9.0.1",
     "zod": "^4.4.3"
-  }
+  },
+  "packageManager": "pnpm@9.10.0+sha1.216899f511c8dfde183c7cb50b69009c779534a8"
 }
