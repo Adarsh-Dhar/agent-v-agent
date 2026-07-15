@@ -213,7 +213,7 @@ function priceFor(market, priceName) {
   return typeof raw === 'number' ? raw / 1000 : null; // Prices are decimal odds x1000
 }
 
-function resolveMarketOdds(marketsArray, agent) {
+export function resolveMarketOdds(marketsArray, agent) {
   const marketFocus = agent.market_focus || '1x2';
 
   if (!Array.isArray(marketsArray) || marketsArray.length === 0) {
@@ -271,7 +271,7 @@ function resolveMarketOdds(marketsArray, agent) {
  * 'game_finalised' is a special case -- it has no Clock field at all, so
  * minute has to fall back to whatever the last known clock was.
  */
-function extractLatestScoreState(scoresArray, previousMinute = 0) {
+export function extractLatestScoreState(scoresArray, previousMinute = 0) {
   if (!Array.isArray(scoresArray) || scoresArray.length === 0) {
     return { score: { home: 0, away: 0 }, minute: previousMinute, event: null, matchEnded: false };
   }

@@ -1,5 +1,5 @@
 === France vs Spain (FixtureId: 18237038) ===
-Fetched at: 2026-07-15T06:09:35.904Z
+Fetched at: 2026-07-15T06:51:06.021Z
 
 --- FIXTURE DETAILS ---
 Fixture not found in fixtures list

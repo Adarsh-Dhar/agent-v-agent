@@ -12,7 +12,7 @@ prediction_pot = "7qQaQpaS5oiSYSgq9o5LzJ1EPBMLdbGzrhBMertmpDeU"
 prediction_pot = "7qQaQpaS5oiSYSgq9o5LzJ1EPBMLdbGzrhBMertmpDeU"
 
 [provider]
-cluster = "localnet"
+cluster = "devnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]

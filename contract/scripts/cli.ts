@@ -61,7 +61,7 @@ async function main() {
     case "init-market": {
       const sig = await program.methods
         .initializeMarket(matchId)
-        .accounts({ authority: authority.publicKey, market, systemProgram: anchor.web3.SystemProgram.programId })
+        .accounts({ authority: authority.publicKey })
         .rpc();
       console.log("market initialized:", market.toBase58(), "tx:", sig);
       break;
@@ -74,7 +74,7 @@ async function main() {
       const position = positionPda(program, market, better.publicKey);
       const sig = await program.methods
         .placeBet(side, new anchor.BN(sol * LAMPORTS_PER_SOL))
-        .accounts({ better: better.publicKey, market, position, systemProgram: anchor.web3.SystemProgram.programId })
+        .accounts({ better: better.publicKey })
         .signers([better])
         .rpc();
       console.log(`bet placed: side=${side} sol=${sol} tx:`, sig);
