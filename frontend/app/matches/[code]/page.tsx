@@ -23,6 +23,7 @@ export default function MatchDetailPage({ params }: { params: Promise<{ code: st
   const [joining, setJoining] = useState(false)
   const [copied, setCopied] = useState(false)
   const [starting, setStarting] = useState(false)
+  const [stopping, setStopping] = useState(false)
   const [countdown, setCountdown] = useState<number | null>(null)
   const [showCharts, setShowCharts] = useState(false)
 
@@ -64,6 +65,7 @@ export default function MatchDetailPage({ params }: { params: Promise<{ code: st
       setSecretCode(matchData.match?.secret_code || '')
       const playersData = matchData.players || []
       
+      console.log('[v0] Received players data:', playersData)
       setPlayers(playersData)
 
       // Fetch game details if match has game_id
@@ -102,14 +104,60 @@ export default function MatchDetailPage({ params }: { params: Promise<{ code: st
   useEffect(() => {
     if (code) {
       fetchMatchData()
-      // Keep polling while this match page is open. This is what makes the
-      // match feel "multiplayer": when one player starts the match (or a new
-      // player joins), every other browser polling this endpoint picks up
-      // the change within a few seconds and updates its own UI.
-      const interval = setInterval(() => {
-        fetchMatchData()
-      }, 3000)
-      return () => clearInterval(interval)
+      
+      // Use Supabase Realtime for seamless updates without UI refresh
+      let matchSubscription: any = null
+      let playersSubscription: any = null
+
+      const setupRealtime = async () => {
+        try {
+          const { createClient } = await import('@supabase/supabase-js')
+          const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+          const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+          
+          if (supabaseUrl && supabaseAnonKey) {
+            const supabase = createClient(supabaseUrl, supabaseAnonKey)
+
+            // Subscribe to match changes
+            matchSubscription = supabase
+              .channel(`match-${code}`)
+              .on('postgres_changes', {
+                event: '*',
+                schema: 'public',
+                table: 'matches',
+                filter: `code=eq.${code.toUpperCase()}`
+              }, (payload: any) => {
+                if (payload.new) {
+                  setMatch(payload.new as Match)
+                  setSecretCode(payload.new.secret_code || '')
+                }
+              })
+              .subscribe()
+
+            // Subscribe to player changes
+            playersSubscription = supabase
+              .channel(`match-players-${code}`)
+              .on('postgres_changes', {
+                event: '*',
+                schema: 'public',
+                table: 'match_players'
+              }, () => {
+                // Refresh players when any change occurs
+                fetchMatchData()
+              })
+              .subscribe()
+          }
+        } catch (err) {
+          console.error('[v0] Error setting up realtime:', err)
+        }
+      }
+
+      setupRealtime()
+
+      return () => {
+        if (matchSubscription) matchSubscription.unsubscribe()
+        if (playersSubscription) playersSubscription.unsubscribe()
+      }
     }
   }, [code, fetchMatchData])
 
@@ -165,6 +213,33 @@ export default function MatchDetailPage({ params }: { params: Promise<{ code: st
       alert(err instanceof Error ? err.message : 'Failed to start match')
     } finally {
       setStarting(false)
+    }
+  }
+
+  const stopMatch = async () => {
+    setStopping(true)
+    try {
+      const response = await fetch(`/api/matches/${code}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'pending' }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to stop match')
+      }
+
+      // Update local state immediately
+      setMatch(data.match)
+      setShowCharts(false)
+      setCountdown(null)
+    } catch (err) {
+      console.error('[v0] Error stopping match:', err)
+      alert(err instanceof Error ? err.message : 'Failed to stop match')
+    } finally {
+      setStopping(false)
     }
   }
 
@@ -409,7 +484,7 @@ export default function MatchDetailPage({ params }: { params: Promise<{ code: st
             <div className="flex-1">
               <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2">Secret Code</p>
               <code 
-                className="px-6 py-4 bg-background rounded-lg text-3xl font-mono font-bold text-primary tracking-widest w-full text-center cursor-pointer hover:bg-primary/5 transition-all select-all"
+                className="px-4 py-2 bg-background rounded-lg text-lg font-mono font-medium text-primary tracking-wider w-full text-center cursor-pointer hover:bg-primary/5 transition-all select-all"
                 onClick={copyCode}
                 title="Click to copy"
               >
@@ -418,18 +493,18 @@ export default function MatchDetailPage({ params }: { params: Promise<{ code: st
             </div>
             <button
               onClick={copyCode}
-              className="flex-shrink-0 p-3 text-primary hover:bg-primary/10 rounded-lg transition-all"
+              className="flex-shrink-0 p-2 text-primary hover:bg-primary/10 rounded-lg transition-all"
               title="Copy secret code"
             >
               {copied ? (
-                <span className="text-sm font-bold">✓ Copied</span>
+                <span className="text-xs font-bold">✓ Copied</span>
               ) : (
-                <Copy className="w-6 h-6" />
+                <Copy className="w-4 h-4" />
               )}
             </button>
             <div className="text-right flex-shrink-0">
               <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2">Players</p>
-              <p className="text-3xl font-bold gradient-text">{players.length}/{match.max_players}</p>
+              <p className="text-2xl font-bold gradient-text">{players.length}/{match.max_players}</p>
             </div>
           </div>
         </div>
@@ -477,6 +552,27 @@ export default function MatchDetailPage({ params }: { params: Promise<{ code: st
               <>
                 <Play className="w-6 h-6" />
                 Start Match
+              </>
+            )}
+          </button>
+        )}
+
+        {/* Stop Match Button - Only for members when match is active */}
+        {isPlayerInMatch && matchStarted && (
+          <button
+            onClick={stopMatch}
+            disabled={stopping}
+            className="mb-8 flex items-center gap-2 px-8 py-4 bg-gradient-to-r from-primary to-secondary text-background rounded-lg font-bold text-lg hover:shadow-lg hover:shadow-primary/50 transition-all disabled:opacity-50"
+          >
+            {stopping ? (
+              <>
+                <Loader className="w-5 h-5 animate-spin" />
+                Stopping...
+              </>
+            ) : (
+              <>
+                <Play className="w-6 h-6 rotate-180" />
+                Stop Match
               </>
             )}
           </button>

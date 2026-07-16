@@ -135,8 +135,8 @@ export default function MatchesPage() {
         throw new Error(data.error || 'Match not found')
       }
 
-      // Successfully found match, redirect to it
-      window.location.href = `/matches/${joinCode.toUpperCase()}`
+      // Successfully found match, redirect using the actual match code (not secret_code)
+      window.location.href = `/matches/${data.match.code}`
     } catch (err) {
       console.error('[v0] Error joining match:', err)
       setJoinError(err instanceof Error ? err.message : 'Failed to join match')
@@ -155,12 +155,12 @@ export default function MatchesPage() {
           <form onSubmit={handleJoinMatch} className="flex flex-col sm:flex-row gap-3">
             <input
               type="text"
-              placeholder="Enter match code"
+              placeholder="Enter match code or secret code"
               value={joinCode}
               onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
               disabled={joiningMatch}
-              maxLength={12}
-              className="flex-1 px-4 py-3 bg-input/50 border border-border/50 rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50 font-mono text-lg tracking-widest"
+              maxLength={32}
+              className="flex-1 px-4 py-3 bg-input/50 border border-border/50 rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50 font-mono text-lg tracking-wider"
             />
             <button
               type="submit"

@@ -32,11 +32,33 @@ export async function GET(
       return NextResponse.json({ error: 'Bad Request: Match code is required' }, { status: 400 })
     }
 
-    const { data: match, error: matchError } = await supabaseAdmin
+    // Try to find match by code first, then by secret_code
+    let match = null
+    let matchError = null
+
+    // First try by code
+    const { data: matchByCode, error: codeError } = await supabaseAdmin
       .from('matches')
       .select('*')
       .eq('code', code.toUpperCase())
       .single()
+
+    if (!codeError && matchByCode) {
+      match = matchByCode
+    } else {
+      // If not found by code, try by secret_code
+      const { data: matchBySecret, error: secretError } = await supabaseAdmin
+        .from('matches')
+        .select('*')
+        .eq('secret_code', code.toUpperCase())
+        .single()
+
+      if (!secretError && matchBySecret) {
+        match = matchBySecret
+      } else {
+        matchError = secretError
+      }
+    }
 
     if (matchError && matchError.code !== 'PGRST116') {
       console.error('[v0] Database error fetching match:', matchError)
@@ -63,6 +85,7 @@ export async function GET(
       )
     }
 
+    console.log('[v0] Fetched players for match', match.id, ':', players)
     return NextResponse.json({ match, players: players || [] }, { status: 200 })
   } catch (error) {
     console.error('[v0] Error in GET /api/matches/[code]:', error)
@@ -260,20 +283,30 @@ export async function POST(
       player_name,
       agent_id,
       agent_name,
+      purse: purseAmount,
+      initial_purse: purseAmount,
+      pnl: 0,
     }
+    
+    console.log('[v0] Attempting to add player to match:', playerData)
     
     const { data: newPlayer, error: insertError } = await supabaseAdmin
       .from('match_players')
       .insert([playerData])
       .select()
 
-    // Log warning if insert fails, but don't fail the response - join was successful conceptually
     if (insertError) {
-      console.warn('[v0] Note: Player join succeeded but could not persist to database:', insertError?.message)
+      console.error('[v0] Failed to add player to database:', insertError)
+      return NextResponse.json(
+        { error: 'Failed to join match: ' + insertError.message },
+        { status: 500 }
+      )
     }
 
+    console.log('[v0] Successfully added player:', newPlayer)
+
     return NextResponse.json(
-      { player: newPlayer?.[0] || { id: `temp-${Date.now()}`, ...playerData, joined: true } },
+      { player: newPlayer?.[0] },
       { status: 201 }
     )
   } catch (error) {
