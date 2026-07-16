@@ -65,6 +65,7 @@ export type Player = {
 export type Match = {
   id: string
   code: string
+  secret_code: string
   title: string
   description: string
   creator_id: string
@@ -80,12 +81,13 @@ export type Match = {
 export type MatchPlayer = {
   id: string
   match_id: string
-  user_id: string
+  player_id: string
+  player_name: string
   agent_id: string | null
   agent_name: string | null
   purse: number
   initial_purse: number
   pnl: number
-  joined_at: string
+  created_at: string
   updated_at: string
 }

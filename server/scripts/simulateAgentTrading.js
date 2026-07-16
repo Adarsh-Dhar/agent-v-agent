@@ -517,8 +517,8 @@ console.log('\nStarting...\n');
 const tick = createMockArgentinaSwitzerlandFeed({ durationMs: DURATION_MS });
 const history = [];
 
-const interval = setInterval(() => {
-  const snapshot = tick();
+const interval = setInterval(async () => {
+  const snapshot = await tick();
   history.push(snapshot);
   const MAX_HISTORY_TICKS = 800;
   if (history.length > MAX_HISTORY_TICKS) history.shift();

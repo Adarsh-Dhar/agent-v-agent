@@ -14,6 +14,16 @@ function generateMatchCode(): string {
   return Math.random().toString(36).substring(2, 14).toUpperCase()
 }
 
+// Generate 32-bit random secret code
+function generateSecretCode(): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+  let result = ''
+  for (let i = 0; i < 32; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length))
+  }
+  return result
+}
+
 export async function GET(request: NextRequest) {
   if (!supabaseAdmin) {
     return NextResponse.json(
@@ -164,6 +174,7 @@ export async function POST(request: NextRequest) {
     }
 
     const code = generateMatchCode()
+    const secretCode = generateSecretCode()
 
     // Insert match
     const { data, error } = await supabaseAdmin
@@ -171,6 +182,7 @@ export async function POST(request: NextRequest) {
       .insert([
         {
           code,
+          secret_code: secretCode,
           title,
           description,
           creator_id: userId || 'demo-user-Demo User',

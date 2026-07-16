@@ -98,6 +98,17 @@ ALTER TABLE public.trades
 
 CREATE INDEX IF NOT EXISTS trades_run_id_idx ON public.trades(run_id);
 
+-- Create match_clocks table: shared, race-safe authoritative "match start"
+-- epoch for replay/mock matches. Multiple independently-spawned agent
+-- processes trading the same match_id all read this single row instead of
+-- each seeding a start time from their own Date.now(), which is what
+-- previously caused their timelines to drift apart (see matchClock.js).
+CREATE TABLE IF NOT EXISTS public.match_clocks (
+  match_id TEXT PRIMARY KEY,
+  started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Create reflection failures table for logging LLM reflection failures
 CREATE TABLE IF NOT EXISTS public.reflection_failures (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

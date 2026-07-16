@@ -61,6 +61,7 @@ export const agents = pgTable('agents', {
 export const matches = pgTable('matches', {
   id: text('id').primaryKey(),
   code: text('code').unique().notNull(),
+  secret_code: text('secret_code').unique().notNull(),
   userId: text('userId').notNull().references(() => user.id, { onDelete: 'cascade' }),
   title: text('title').notNull(),
   description: text('description'),

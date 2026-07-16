@@ -13,8 +13,8 @@ console.log('Starting Argentina vs Switzerland mock feed simulation...');
 console.log(`Duration: ${durationMs / 1000} seconds real time (1 match minute = 1 second)`);
 console.log('Press Ctrl+C to stop\n');
 
-const interval = setInterval(() => {
-  const snapshot = tick();
+const interval = setInterval(async () => {
+  const snapshot = await tick();
   console.log(`[${snapshot.minute}'] odds=${snapshot.odds.toFixed(3)} score=${snapshot.score.home}-${snapshot.score.away} event=${snapshot.event || '-'} period=${snapshot.period}`);
 
   if (snapshot.matchEnded) {

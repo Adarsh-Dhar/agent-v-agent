@@ -1,11 +1,21 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { getMatchEpoch } from './matchClock.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPLAYS_DIR = path.join(__dirname, 'replays');
 
-// In-memory replay state per match
+// Advance to the next timeline event every 8 seconds of wall-clock time.
+const TICK_INTERVAL_MS = 8000;
+
+// In-memory cache per match: just the loaded fixture + a "finished" latch.
+// Notably, this NO LONGER holds a per-process currentIndex/lastTickTime --
+// those used to be incremented locally on each tick, which is exactly what
+// let different agents' processes drift apart from each other. The timeline
+// position is now derived fresh on every call from the shared epoch (see
+// getMatchEpoch below), so every process -- no matter when it started
+// polling -- computes the identical index for a given wall-clock time.
 const replayStates = new Map();
 
 /**
@@ -36,15 +46,13 @@ function loadFixture(fixtureId) {
 }
 
 /**
- * Initialize replay state for a match
+ * Initialize (process-local) replay state for a match: just the loaded
+ * fixture data. No timing state lives here anymore -- see module header.
  */
 function initReplayState(fixtureId) {
   const fixture = loadFixture(fixtureId);
   return {
     fixture,
-    currentIndex: 0,
-    lastTickTime: Date.now(),
-    tickIntervalMs: 8000, // Advance to next event every 8 seconds
     isFinished: false,
   };
 }
@@ -86,29 +94,34 @@ export async function fetchReplaySnapshot(matchId) {
     throw new Error(`Invalid replay match ID: ${matchId}`);
   }
   
-  // Get or initialize replay state
+  // Get or initialize (process-local) fixture state
   let state = replayStates.get(matchId);
   if (!state) {
     state = initReplayState(fixtureId);
     replayStates.set(matchId, state);
   }
-  
-  const now = Date.now();
-  const timeSinceLastTick = now - state.lastTickTime;
-  
-  // Check if it's time to advance to next event
-  if (timeSinceLastTick >= state.tickIntervalMs && !state.isFinished) {
-    state.currentIndex++;
-    state.lastTickTime = now;
-    
-    // Check if we've reached the end
-    if (state.currentIndex >= state.fixture.timeline.length) {
-      state.isFinished = true;
-      state.currentIndex = state.fixture.timeline.length - 1; // Hold at final state
-    }
+
+  // Shared, race-safe start time for this match_id. Every process trading
+  // this match -- no matter which one asked first, or how many seconds late
+  // a later process's spawn/connect happened -- gets back the exact same
+  // epoch, because it's elected once in Supabase (see matchClock.js).
+  const epoch = await getMatchEpoch(matchId);
+
+  // Timeline index is a pure function of elapsed wall-clock time since the
+  // shared epoch, NOT a counter incremented per-tick. This is what makes it
+  // self-correcting: it doesn't matter if a tick was slow, missed, or this
+  // is the very first call from a process that joined late -- every reader
+  // converges on the same index for the same wall-clock moment.
+  const elapsed = Date.now() - epoch;
+  const rawIndex = Math.floor(elapsed / TICK_INTERVAL_MS);
+  const lastIndex = state.fixture.timeline.length - 1;
+  const currentIndex = Math.max(0, Math.min(rawIndex, lastIndex));
+
+  if (currentIndex >= lastIndex) {
+    state.isFinished = true;
   }
-  
-  const currentEvent = state.fixture.timeline[state.currentIndex];
+
+  const currentEvent = state.fixture.timeline[currentIndex];
   
   // Build event description from timeline events
   let eventDesc = null;
@@ -133,7 +146,12 @@ export async function fetchReplaySnapshot(matchId) {
 }
 
 /**
- * Reset replay state for a match (useful for restarting replay)
+ * Reset (process-local) replay state for a match. This only clears this
+ * process's cached fixture/isFinished latch -- the shared start epoch in
+ * Supabase is untouched, so other processes' timelines are unaffected and
+ * this process will pick up exactly where the shared clock says it should.
+ * To actually restart a match's clock for everyone, call
+ * matchClock.resetMatchEpoch(matchId) explicitly.
  */
 export function resetReplay(matchId) {
   replayStates.delete(matchId);

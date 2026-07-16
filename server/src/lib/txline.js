@@ -61,7 +61,10 @@ function plainRandomWalkTick() {
 
 // Scripted mock feed support
 let scriptedMockTick = null;
-function mockTick() {
+// NOTE: async now, because createMockArgentinaSwitzerlandFeed()'s tick() must
+// await the shared match epoch (Supabase round trip) instead of reading a
+// local Date.now() -- see mockTxlineFeed.js / matchClock.js for why.
+async function mockTick() {
   if (process.env.TXLINE_MOCK_DATASET === 'arg-vs-sui') {
     if (!scriptedMockTick) scriptedMockTick = createMockArgentinaSwitzerlandFeed();
     return scriptedMockTick();
@@ -320,11 +323,11 @@ export async function fetchOddsSnapshot(fixtureId, agent = {}) {
   }
 
   if (process.env.TXLINE_MOCK_DATASET) {
-    return mockTick();
+    return await mockTick();
   }
 
   if (!TXLINE_API_ORIGIN || !TXLINE_WALLET_KEYPAIR_PATH || !TXLINE_API_TOKEN) {
-    return { ...mockTick(), isMock: true };
+    return { ...(await mockTick()), isMock: true };
   }
 
   try {
@@ -336,7 +339,7 @@ export async function fetchOddsSnapshot(fixtureId, agent = {}) {
     const odds = resolveMarketOdds(oddsArray, agent);
     if (odds === null) {
       log(`No open odds market for fixture ${fixtureId} (market_focus=${agent.market_focus || '1x2'}).`);
-      return { ...mockTick(), isMock: true, mockReason: 'no_open_market' };
+      return { ...(await mockTick()), isMock: true, mockReason: 'no_open_market' };
     }
 
     const { score, minute, event, matchEnded } = extractLatestScoreState(scoresArray, agent._lastKnownMinute ?? 0);
@@ -353,6 +356,6 @@ export async function fetchOddsSnapshot(fixtureId, agent = {}) {
     };
   } catch (error) {
     log('TxLINE request failed, falling back to mock:', error.message);
-    return { ...mockTick(), isMock: true, mockReason: error.message };
+    return { ...(await mockTick()), isMock: true, mockReason: error.message };
   }
 }

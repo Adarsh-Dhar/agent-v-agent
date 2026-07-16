@@ -13,6 +13,7 @@ export default function MatchDetailPage({ params }: { params: Promise<{ code: st
   const { user } = useAuth()
   const searchParams = useSearchParams()
   const [code, setCode] = useState<string>('')
+  const [secretCode, setSecretCode] = useState<string>('')
   const [match, setMatch] = useState<Match | null>(null)
   const [game, setGame] = useState<Game | null>(null)
   const [players, setPlayers] = useState<MatchPlayer[]>([])
@@ -60,6 +61,7 @@ export default function MatchDetailPage({ params }: { params: Promise<{ code: st
       }
 
       setMatch(matchData.match)
+      setSecretCode(matchData.match?.secret_code || '')
       const playersData = matchData.players || []
       
       setPlayers(playersData)
@@ -168,13 +170,13 @@ export default function MatchDetailPage({ params }: { params: Promise<{ code: st
 
   const copyCode = () => {
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(code).then(() => {
+      navigator.clipboard.writeText(secretCode).then(() => {
         setCopied(true)
         setTimeout(() => setCopied(false), 2000)
       }).catch(() => {
         // Fallback: select text for manual copy
         const element = document.createElement('textarea')
-        element.value = code
+        element.value = secretCode
         document.body.appendChild(element)
         element.select()
         try {
@@ -189,7 +191,7 @@ export default function MatchDetailPage({ params }: { params: Promise<{ code: st
     } else {
       // Fallback: select text for manual copy
       const element = document.createElement('textarea')
-      element.value = code
+      element.value = secretCode
       document.body.appendChild(element)
       element.select()
       try {
@@ -406,14 +408,18 @@ export default function MatchDetailPage({ params }: { params: Promise<{ code: st
           <div className="flex flex-col sm:flex-row items-center gap-4 pt-6 border-t border-border/30">
             <div className="flex-1">
               <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2">Secret Code</p>
-              <code className="px-6 py-4 bg-background rounded-lg text-3xl font-mono font-bold text-primary tracking-widest w-full text-center">
-                {code}
+              <code 
+                className="px-6 py-4 bg-background rounded-lg text-3xl font-mono font-bold text-primary tracking-widest w-full text-center cursor-pointer hover:bg-primary/5 transition-all select-all"
+                onClick={copyCode}
+                title="Click to copy"
+              >
+                {secretCode ? `${secretCode.substring(0, 4)}${'•'.repeat(24)}${secretCode.substring(28)}` : 'Loading...'}
               </code>
             </div>
             <button
               onClick={copyCode}
               className="flex-shrink-0 p-3 text-primary hover:bg-primary/10 rounded-lg transition-all"
-              title="Copy match code"
+              title="Copy secret code"
             >
               {copied ? (
                 <span className="text-sm font-bold">✓ Copied</span>

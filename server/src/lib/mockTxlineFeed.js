@@ -3,6 +3,14 @@
 // ============================================================================
 // SYNTHETIC / TEST DATA ONLY — NOT A LIVE FEED
 // ============================================================================
+// NOTE ON TIMING: this feed's "start" time is elected once, shared across
+// every independently-spawned agent process for the same match_id, via
+// matchClock.js/Supabase -- NOT seeded from this process's own Date.now().
+// Previously each process set its own startedAt the first moment IT called
+// tick(), so agents whose processes spawned a few seconds apart (normal
+// spawn/DB-round-trip jitter) ended up permanently offset from each other
+// for the whole match, even though they were labeled as trading together.
+// ============================================================================
 // This module does NOT talk to TxLINE or any real odds provider. It replays
 // a fixed, already-completed match (Argentina 3-1 Switzerland, AET/pens,
 // FixtureId 18222446) as a deterministic keyframe timeline, and synthesizes
@@ -14,6 +22,8 @@
 // not real market prices, and this must never be pointed at real users,
 // real money, or presented anywhere as genuine market data.
 // ============================================================================
+
+import { getMatchEpoch } from './matchClock.js';
 
 // Keyframes taken directly from the uploaded match timeline (txline-full-output.txt).
 // `minute` is match-clock minute (can exceed 90 in ET), `event` is the single most
@@ -33,6 +43,8 @@ const KEYFRAMES = [
   { minute: 120.5,score: { home: 3, away: 1 }, cards: { yh: 3, ya: 1, rh: 0, ra: 1 }, corners: { home: 8, away: 2 }, event: 'penalties',       period: 'penalties' },
   { minute: 121,score: { home: 3, away: 1 }, cards: { yh: 3, ya: 1, rh: 0, ra: 1 }, corners: { home: 8, away: 2 }, event: 'full_time',      period: 'ended' },
 ];
+
+const MOCK_MATCH_ID = 'mock-arg-vs-sui-2026';
 
 const TOTAL_MATCH_MINUTES = KEYFRAMES[KEYFRAMES.length - 1].minute;
 
@@ -91,13 +103,19 @@ function stepRandomWalk(prevOffset) {
 export function createMockArgentinaSwitzerlandFeed(options = {}) {
   const envDurationMs = Number(process.env.TXLINE_MOCK_DURATION_MS) || DEFAULT_DURATION_MS;
   const durationMs = options.durationMs ?? envDurationMs;
-  const startedAt = Date.now();
+  const matchId = options.matchId ?? MOCK_MATCH_ID;
   let lastEmittedEventMinute = -1;
   let walkOffset = 0; // continuous random-walk state, carried between ticks
   let halfTimeEntryMinute = null; // track match minute when entering half time
   let matchEnded = false; // flag to stop simulation when match ends
 
-  return function tick() {
+  return async function tick() {
+    // Shared, race-safe start time -- elected once in Supabase and read back
+    // identically by every agent process trading this match (see
+    // matchClock.js). This replaces the old per-process `const startedAt =
+    // Date.now()`, which is what let different agents' graphs start seconds
+    // apart from each other.
+    const startedAt = await getMatchEpoch(matchId);
     const elapsed = Date.now() - startedAt;
     // Timeline itself still finishes after `durationMs` (matchMinute caps at
     // TOTAL_MATCH_MINUTES), but the odds keep jittering forever afterward —
@@ -142,7 +160,7 @@ export function createMockArgentinaSwitzerlandFeed(options = {}) {
     const odds = Math.max(1.02, Number((center + walkOffset).toFixed(3)));
 
     return {
-      match_id: 'mock-arg-vs-sui-2026',
+      match_id: matchId,
       odds,
       score: { home: kf.score.home, away: kf.score.away },
       minute: Math.min(120, Math.round(matchMinute)), // display clock caps like most feeds do
