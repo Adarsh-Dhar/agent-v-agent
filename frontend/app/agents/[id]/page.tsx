@@ -109,31 +109,31 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
               <span className="text-sm font-medium text-muted-foreground">Balance</span>
               <BarChart3 className="w-4 h-4 text-primary" />
             </div>
-            <p className="text-2xl font-bold text-foreground">${(agent.initial_purse || 0).toLocaleString()}</p>
+            <p className="text-2xl font-bold text-foreground">${(agent.balance || 0).toLocaleString()}</p>
           </div>
 
           <div className="glass-card p-6">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium text-muted-foreground">Status</span>
+              <span className="text-sm font-medium text-muted-foreground">Budget Cap</span>
               <Users className="w-4 h-4 text-primary" />
             </div>
-            <p className="text-2xl font-bold text-foreground capitalize">{agent.signal_type || 'N/A'}</p>
+            <p className="text-2xl font-bold text-foreground">${(agent.budget_cap || 0).toLocaleString()}</p>
           </div>
 
           <div className="glass-card p-6">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium text-muted-foreground">Risk Level</span>
+              <span className="text-sm font-medium text-muted-foreground">Trades</span>
               <TrendingUp className="w-4 h-4 text-accent" />
             </div>
-            <p className="text-2xl font-bold text-foreground">{agent.exit_rule || 'N/A'}</p>
+            <p className="text-2xl font-bold text-foreground">{agent.trade_count || 0}</p>
           </div>
 
           <div className="glass-card p-6">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium text-muted-foreground">Created</span>
+              <span className="text-sm font-medium text-muted-foreground">Realized PnL</span>
               <TrendingUp className="w-4 h-4 text-accent" />
             </div>
-            <p className="text-sm font-bold text-foreground">{new Date().toLocaleDateString()}</p>
+            <p className="text-2xl font-bold text-foreground">${(agent.realized_pnl || 0).toLocaleString()}</p>
           </div>
         </div>
 

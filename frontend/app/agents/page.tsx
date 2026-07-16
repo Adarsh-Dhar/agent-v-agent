@@ -68,7 +68,7 @@ export default function AgentsPage() {
   }
 
   const calculateROI = (agent: Agent) => {
-    if (agent.budget_cap === 0) return 0
+    if (agent.budget_cap === 0 || agent.balance === 0 || agent.trade_count === 0) return 0
     return ((agent.balance - agent.budget_cap) / agent.budget_cap) * 100
   }
 

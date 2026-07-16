@@ -52,44 +52,18 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function POST(request: NextRequest) {
-  if (!supabaseAdmin) {
-    return NextResponse.json(
-      { error: 'Supabase not configured' },
-      { status: 500 }
-    )
-  }
+// The Express agent server owns agent creation: it validates the full
+// strategy config against the schema in server/src/lib/validateConfig.js
+// and is what /agents/:id/run and the trading runner expect to exist.
+// Keep this in an env var since it's an internal service URL, not a public one.
+const AGENT_SERVER_URL = process.env.AGENT_SERVER_URL || 'http://localhost:5000'
 
+export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
+    const { owner, config } = body
 
-    const {
-      name,
-      description,
-      signal_type,
-      odds_threshold,
-      odds_timeframe,
-      position_sizing,
-      fixed_stake,
-      percentage_stake,
-      exit_rule,
-      stop_loss,
-      take_profit,
-      aggression,
-      cooldown_minutes,
-      direction_bias,
-      budget_cap = 10000,
-      owner,
-      market_focus,
-      decision_style,
-      phase_weighting,
-      reaction_latency_ms,
-      context_venue_aware,
-      context_weather_aware,
-      wildcard_trait,
-    } = body
-
-    if (!name) {
+    if (!config?.name) {
       return NextResponse.json(
         { error: 'Agent name is required' },
         { status: 400 }
@@ -103,49 +77,32 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Use admin client for INSERT to bypass RLS
-    const { data, error } = await supabaseAdmin
-      .from('agents')
-      .insert([
-        {
-          name,
-          description,
-          signal_type,
-          odds_threshold,
-          odds_timeframe,
-          position_sizing,
-          fixed_stake,
-          percentage_stake,
-          exit_rule,
-          stop_loss,
-          take_profit,
-          aggression,
-          cooldown_minutes,
-          direction_bias,
-          budget_cap,
-          owner,
-          balance: budget_cap,
-          realized_pnl: 0,
-          unrealized_pnl: 0,
-          trade_count: 0,
-          status: 'active',
-        },
-      ])
-      .select()
+    // Forward straight to the Express server's POST /agents, which validates
+    // the config and inserts into Supabase with the service-role key itself.
+    const upstream = await fetch(`${AGENT_SERVER_URL}/agents`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ owner, config }),
+    })
 
-    if (error) {
-      console.error('[v0] Supabase error creating agent:', error)
-      return NextResponse.json({ error: error.message }, { status: 400 })
+    const data = await upstream.json()
+
+    if (!upstream.ok) {
+      console.error('[v0] Agent server error creating agent:', data)
+      return NextResponse.json(
+        { error: data.error || 'Failed to create agent' },
+        { status: upstream.status }
+      )
     }
 
     return NextResponse.json(
-      { agent: data?.[0], message: 'Agent created successfully' },
+      { agent: data, message: data.message || 'Agent created successfully' },
       { status: 201 }
     )
   } catch (error) {
     console.error('[v0] Error in POST /api/agents:', error)
     return NextResponse.json(
-      { error: 'Failed to create agent' },
+      { error: 'Failed to create agent. Is the agent server running?' },
       { status: 500 }
     )
   }

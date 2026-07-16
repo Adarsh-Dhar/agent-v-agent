@@ -2,7 +2,7 @@ export interface AgentPreset {
   id: string
   name: string
   description: string
-  marketFocus: 'x1x2' | 'asian_handicap' | 'over_under' | 'multi_market'
+  marketFocus: '1x2' | 'asian_handicap' | 'over_under' | 'multi_market'
   decisionStyle: 'anticipatory' | 'confirmatory' | 'balanced'
   confirmationTolerance: 'instant' | 'confirmation' | 'cooldown'
   phaseWeighting: 'early' | 'pre_halftime' | 'second_half' | 'late_stoppage' | 'full_match'
@@ -19,7 +19,7 @@ export const AGENT_PRESETS: AgentPreset[] = [
     id: 'anticipatory-early-trader',
     name: 'Anticipatory Early Trader',
     description: 'Fires on high-danger possessions before goals - capitalizes on pre-event movements',
-    marketFocus: 'x1x2',
+    marketFocus: '1x2',
     decisionStyle: 'anticipatory',
     confirmationTolerance: 'instant',
     phaseWeighting: 'early',
@@ -34,7 +34,7 @@ export const AGENT_PRESETS: AgentPreset[] = [
     id: 'confirmatory-event-tracker',
     name: 'Confirmatory Event Tracker',
     description: 'Only trades on confirmed goals or official VAR outcomes - prioritizes safety',
-    marketFocus: 'x1x2',
+    marketFocus: '1x2',
     decisionStyle: 'confirmatory',
     confirmationTolerance: 'confirmation',
     phaseWeighting: 'full_match',
@@ -49,7 +49,7 @@ export const AGENT_PRESETS: AgentPreset[] = [
     id: 'balanced-score-state',
     name: 'Balanced Score-State Trader',
     description: 'Blends anticipatory and confirmatory signals with score-state bias',
-    marketFocus: 'x1x2',
+    marketFocus: '1x2',
     decisionStyle: 'balanced',
     confirmationTolerance: 'cooldown',
     phaseWeighting: 'second_half',
@@ -94,7 +94,7 @@ export const AGENT_PRESETS: AgentPreset[] = [
     id: 'comeback-romantic',
     name: 'Comeback Romantic',
     description: 'Favors underdog teams with comeback wildcard trait - emotional betting style',
-    marketFocus: 'x1x2',
+    marketFocus: '1x2',
     decisionStyle: 'anticipatory',
     confirmationTolerance: 'cooldown',
     phaseWeighting: 'second_half',
@@ -109,7 +109,7 @@ export const AGENT_PRESETS: AgentPreset[] = [
     id: 'revenge-trader',
     name: 'Revenge Trader',
     description: 'Reverses losing trades with the revenge trader wildcard - responds to losses',
-    marketFocus: 'x1x2',
+    marketFocus: '1x2',
     decisionStyle: 'balanced',
     confirmationTolerance: 'instant',
     phaseWeighting: 'full_match',
@@ -139,7 +139,7 @@ export const AGENT_PRESETS: AgentPreset[] = [
     id: 'last-minute-believer',
     name: 'Last Minute Believer',
     description: 'Only activates in final 15 minutes with high-conviction trades',
-    marketFocus: 'x1x2',
+    marketFocus: '1x2',
     decisionStyle: 'anticipatory',
     confirmationTolerance: 'instant',
     phaseWeighting: 'late_stoppage',
