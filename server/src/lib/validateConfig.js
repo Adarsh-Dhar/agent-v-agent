@@ -2,7 +2,7 @@
 const MARKET_FOCUS = ['1x2', 'asian_handicap', 'over_under', 'multi_market'];
 const AH_LINE_BAND = ['tight', 'deep'];
 const OU_LINE_BAND = ['low', 'mid', 'high'];
-const DECISION_STYLE = ['anticipatory', 'confirmatory', 'balanced'];
+const DECISION_STYLE = ['anticipatory', 'confirmatory', 'balanced', 'momentum', 'mean_reversion', 'volatility_breakout'];
 const CONFIRMATION_TOLERANCE = ['aggressive', 'conservative', 'adaptive'];
 const SCORE_STATE_MODE = ['favor_chasing', 'favor_leading', 'momentum_only'];
 const SIDE_BIAS = ['home', 'away', 'favorite', 'underdog', 'none'];
@@ -177,6 +177,31 @@ export function validateAgentConfig(body) {
   if (body.confirmation_threshold !== undefined) {
     if (typeof body.confirmation_threshold !== 'number' || body.confirmation_threshold < 1 || body.confirmation_threshold > 10) {
       errors.push('confirmation_threshold must be a number between 1 and 10');
+    }
+  }
+
+  // Odds-only signal family (momentum / mean_reversion / volatility_breakout).
+  if (body.odds_lookback_ticks !== undefined) {
+    if (typeof body.odds_lookback_ticks !== 'number' || body.odds_lookback_ticks < 2 || body.odds_lookback_ticks > 30) {
+      errors.push('odds_lookback_ticks must be a number between 2 and 30');
+    }
+  }
+
+  if (body.odds_threshold_pct !== undefined) {
+    if (typeof body.odds_threshold_pct !== 'number' || body.odds_threshold_pct < 0.5 || body.odds_threshold_pct > 15) {
+      errors.push('odds_threshold_pct must be a number between 0.5 and 15');
+    }
+  }
+
+  if (body.volatility_window !== undefined) {
+    if (typeof body.volatility_window !== 'number' || body.volatility_window < 3 || body.volatility_window > 20) {
+      errors.push('volatility_window must be a number between 3 and 20');
+    }
+  }
+
+  if (body.breakout_zscore !== undefined) {
+    if (typeof body.breakout_zscore !== 'number' || body.breakout_zscore < 1.0 || body.breakout_zscore > 4.0) {
+      errors.push('breakout_zscore must be a number between 1.0 and 4.0');
     }
   }
 

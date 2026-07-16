@@ -64,9 +64,30 @@ function argVal(name, def) {
   const i = args.indexOf(`--${name}`);
   return i !== -1 && args[i + 1] !== undefined ? args[i + 1] : def;
 }
-const SCORES_FILE = argVal('scores-file', path.join(ROOT, 'fra-esp-logs.txt'));
+const SCORES_FILE = argVal('scores-file', null);
 const ODDS_FILE = argVal('odds-file', null);
-const FIXTURE_ID = argVal('fixture', null);
+let FIXTURE_ID = argVal('fixture', null);
+
+// Auto-detect latest fixture if none specified and logs directory exists
+if (!FIXTURE_ID && !SCORES_FILE && fs.existsSync(LOG_DIR)) {
+  const oddsFiles = fs.readdirSync(LOG_DIR)
+    .filter((f) => f.startsWith('txline-odds-') && f.endsWith('.jsonl'))
+    .sort()
+    .reverse();
+  if (oddsFiles.length > 0) {
+    // Extract date from filename like "txline-odds-2026-07-14.jsonl"
+    const dateMatch = oddsFiles[0].match(/txline-odds-(\d{4}-\d{2}-\d{2})/);
+    if (dateMatch) {
+      FIXTURE_ID = dateMatch[1]; // Use date as fixture ID for auto-detection
+      console.log(`Auto-detected latest logs from ${dateMatch[1]}`);
+    }
+  }
+}
+
+// Fall back to old text file if still no fixture/scores file specified
+if (!SCORES_FILE && !FIXTURE_ID) {
+  SCORES_FILE = path.join(ROOT, 'fra-esp-logs.txt');
+}
 const NUM_AGENTS = args.includes('--config') ? 1 : parseInt(argVal('agents', '3'), 10);
 const BUDGET = parseFloat(argVal('budget', '1000'));
 const CONFIG_PATH = argVal('config', null);
@@ -98,7 +119,11 @@ function loadScoresArray() {
         // same event can appear in multiple polls while it's still "latest".
         const merged = new Map();
         for (const entry of entries) {
-          for (const ev of entry.data) merged.set(`${ev.Action}-${ev.Id}-${ev.Ts}`, ev);
+          for (const ev of entry.data) {
+            const key = `${ev.Action}-${ev.Id}`;
+            const existing = merged.get(key);
+            if (!existing || (ev.Ts ?? 0) > (existing.Ts ?? 0)) merged.set(key, ev);
+          }
         }
         return [...merged.values()];
       }
@@ -120,6 +145,17 @@ function loadOddsArray() {
   if (FIXTURE_ID && fs.existsSync(LOG_DIR)) {
     const files = fs.readdirSync(LOG_DIR)
       .filter((f) => f.startsWith('txline-odds-') && f.endsWith('.jsonl'))
+      .sort()
+      .map((f) => path.join(LOG_DIR, f));
+    return files.flatMap(loadJsonl);
+  }
+  return [];
+}
+
+function loadProofsArray() {
+  if (FIXTURE_ID && fs.existsSync(LOG_DIR)) {
+    const files = fs.readdirSync(LOG_DIR)
+      .filter((f) => f.startsWith('txline-proofs-') && f.endsWith('.jsonl'))
       .sort()
       .map((f) => path.join(LOG_DIR, f));
     return files.flatMap(loadJsonl);
@@ -168,24 +204,49 @@ const SCORE_STATE_EVENTS = new Set(['goal', 'red_card', 'yellow_card', 'penalty_
 
 // Track running score to classify a bare 'goal' event as goal_home/goal_away
 // by comparing against the previous known score.
-let lastScore = { home: 0, away: 0 };
+//
+// NOTE: this tracker is scoped ONLY to this build-time loop. It must NOT be
+// reused later during live playback -- by the time playback starts, a
+// module-scoped "running score" variable would already hold the FINAL score
+// of the whole match (since this loop walks every event up front), which
+// would make every minute display the final score instead of the score at
+// that point in time. See scoreByMinute below for the value playMinute()
+// actually uses.
+let runningScoreForEvents = { home: 0, away: 0 };
 const scheduleEvents = [];
 for (const t of timeline) {
   if (t.score) {
-    if (t.action === 'goal' && (t.score.home > lastScore.home || t.score.away > lastScore.away)) {
-      scheduleEvents.push({ minute: t.minute, event: t.score.home > lastScore.home ? 'goal_home' : 'goal_away', score: t.score });
+    if (t.action === 'goal' && (t.score.home > runningScoreForEvents.home || t.score.away > runningScoreForEvents.away)) {
+      scheduleEvents.push({ minute: t.minute, event: t.score.home > runningScoreForEvents.home ? 'goal_home' : 'goal_away', score: t.score });
     }
-    lastScore = t.score;
+    runningScoreForEvents = t.score;
   }
   if (t.action === 'red_card') {
-    scheduleEvents.push({ minute: t.minute, event: 'red_card_home', score: lastScore });
+    scheduleEvents.push({ minute: t.minute, event: 'red_card_home', score: runningScoreForEvents });
   }
   if (t.matchEnded) {
-    scheduleEvents.push({ minute: t.minute, event: 'game_finalised', score: t.score || lastScore, matchEnded: true });
+    scheduleEvents.push({ minute: t.minute, event: 'game_finalised', score: t.score || runningScoreForEvents, matchEnded: true });
   }
 }
 
 const maxMinute = Math.max(...timeline.map((t) => t.minute), 1);
+
+// Proper minute-indexed score lookup, correctly carried FORWARD IN TIME
+// (not "whatever the score ended up being by the time the build loop
+// finished"). This is what playMinute() should read from.
+const scoreByMinute = new Array(maxMinute + 1).fill(null);
+{
+  let running = { home: 0, away: 0 };
+  for (const t of timeline) {
+    if (t.score) running = t.score;
+    if (t.minute >= 0 && t.minute <= maxMinute) scoreByMinute[t.minute] = running;
+  }
+  let lastKnown = { home: 0, away: 0 };
+  for (let m = 0; m <= maxMinute; m++) {
+    if (scoreByMinute[m] === null) scoreByMinute[m] = lastKnown;
+    else lastKnown = scoreByMinute[m];
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Odds series (optional) -- correlate each odds poll's real fetched_at time
@@ -218,11 +279,47 @@ if (rawOdds.length > 0) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Proofs series -- correlate each proof poll's real fetched_at time
+// to the nearest scores Ts to derive which match-minute it belongs to.
+// ---------------------------------------------------------------------------
+const rawProofs = loadProofsArray().filter((e) => e.data && typeof e.data === 'object');
+let proofsBucketed = null;
+
+if (rawProofs.length > 0) {
+  const proofsWithMinute = rawProofs.map((entry) => {
+    const t = new Date(entry.fetched_at).getTime();
+    const nearest = chronological.reduce((closest, ev) =>
+      !closest || Math.abs((ev.Ts ?? 0) - t) < Math.abs((closest.Ts ?? 0) - t) ? ev : closest, null);
+    const minute = nearest?.Clock?.Seconds != null ? Math.floor(nearest.Clock.Seconds / 60) : 0;
+    const proofData = entry.data;
+    return proofData ? { minute, proofData } : null;
+  }).filter(Boolean);
+
+  if (proofsWithMinute.length > 0) {
+    proofsBucketed = new Array(maxMinute + 1).fill(null);
+    for (const { minute, proofData } of proofsWithMinute) {
+      if (minute <= maxMinute) proofsBucketed[minute] = proofData;
+    }
+    let lastKnown = proofsWithMinute[0].proofData;
+    for (let m = 0; m <= maxMinute; m++) {
+      if (proofsBucketed[m] === null) proofsBucketed[m] = lastKnown;
+      else lastKnown = proofsBucketed[m];
+    }
+  }
+}
+
 const TRADING_MODE = oddsBucketed !== null;
 
 console.log('='.repeat(78));
 console.log(`Loaded ${chronological.length} real events, reconstructed true chronological order.`);
 console.log(`Match span: minute 0 -> ${maxMinute}. Mode: ${TRADING_MODE ? 'TRADING (odds series found)' : 'TIMELINE (no odds series -- event playback only)'}`);
+if (proofsBucketed) {
+  console.log(`Proofs series: ${rawProofs.length} proof entries loaded`);
+}
+if (maxMinute < 90) {
+  console.log(`⚠️  Note: Logged data only covers minutes 0-${maxMinute}. For full 90-minute replay, run logger during entire match.`);
+}
 console.log('='.repeat(78));
 if (!TRADING_MODE) {
   console.log('\nNo odds data available for this match, so there is no price series for');
@@ -338,19 +435,21 @@ let minute = 0;
 function playMinute() {
   const eventsThisMinute = scheduleEvents.filter((e) => e.minute === minute);
   const significant = eventsThisMinute.find((e) => e.event.startsWith('goal') || e.event.startsWith('red_card')) || eventsThisMinute[0];
-  const score = significant?.score || lastScore;
+  const score = scoreByMinute[minute] || significant?.score || { home: 0, away: 0 };
 
   const snapshot = {
     minute,
     score,
     event: significant?.event ?? null,
     odds: TRADING_MODE ? oddsBucketed[minute] : null,
+    proofs: proofsBucketed ? proofsBucketed[minute] : null,
     matchEnded: eventsThisMinute.some((e) => e.matchEnded),
   };
   history.push(snapshot);
 
   if (!QUIET) {
-    console.log(`\n[${snapshot.minute}'] ${TRADING_MODE ? `odds=${snapshot.odds.toFixed(3)} ` : ''}score=${snapshot.score.home}-${snapshot.score.away} event=${snapshot.event || '-'}`);
+    const proofInfo = snapshot.proofs ? `proofs=✓ ` : '';
+    console.log(`\n[${snapshot.minute}'] ${TRADING_MODE ? `odds=${snapshot.odds.toFixed(3)} ` : ''}${proofInfo}score=${snapshot.score.home}-${snapshot.score.away} event=${snapshot.event || '-'}`);
   }
 
   const now = Date.now();

@@ -132,7 +132,12 @@ async function fetchProofs(fixtureId, scoresData) {
     logEntry('proofs', data);
     return data;
   } catch (err) {
-    logError('proofs', err);
+    // 404 is expected when proofs aren't available yet for the current sequence
+    if (err.response?.status === 404) {
+      console.log('(Validation proofs not available yet for this sequence - will retry later)');
+    } else {
+      logError('proofs', err);
+    }
     return null;
   }
 }

@@ -72,12 +72,73 @@ function runBalanced(agent, latest) {
   return { action: confirmatory.action, confidence: (anticipatory.confidence + confirmatory.confidence) / 2 };
 }
 
-function runSignal(decisionStyle, agent, latest) {
+// ---------------------------------------------------------------------------
+// Odds-only signal family: no event/score data required at all, only a
+// rolling window of `odds` values from `history`. This is the reliable path
+// when live event coverage (goals/red cards) is too sparse to trade on, and
+// it's what actually uses the `history` array evaluateSignal already
+// receives but the event-based styles above never look at.
+// ---------------------------------------------------------------------------
+
+function pctChange(history, lookback) {
+  if (history.length <= lookback) return null;
+  const current = history[history.length - 1].odds;
+  const past = history[history.length - 1 - lookback].odds;
+  if (!current || !past) return null;
+  return (current - past) / past;
+}
+
+function runMomentum(agent, history) {
+  const lookback = agent.odds_lookback_ticks ?? 3;
+  const threshold = (agent.odds_threshold_pct ?? 2) / 100;
+  const change = pctChange(history, lookback);
+  if (change === null || Math.abs(change) < threshold) return null;
+  // odds falling (shortening) = market gaining confidence -> bet the move continues
+  const action = change < 0 ? 'buy' : 'sell';
+  const confidence = Math.min(1, Math.abs(change) / (threshold * 3));
+  return { action, confidence, reason: `momentum:${(change * 100).toFixed(1)}%` };
+}
+
+function runMeanReversion(agent, history) {
+  const lookback = agent.odds_lookback_ticks ?? 3;
+  const threshold = (agent.odds_threshold_pct ?? 2) / 100;
+  const change = pctChange(history, lookback);
+  if (change === null || Math.abs(change) < threshold) return null;
+  // fade the move -- bet it snaps back
+  const action = change < 0 ? 'sell' : 'buy';
+  const confidence = Math.min(1, Math.abs(change) / (threshold * 3));
+  return { action, confidence, reason: `mean_reversion:${(change * 100).toFixed(1)}%` };
+}
+
+function runVolatilityBreakout(agent, history) {
+  const window = agent.volatility_window ?? 6;
+  if (history.length <= window) return null;
+  const recent = history.slice(-window).map((h) => h.odds).filter(Boolean);
+  if (recent.length < window) return null;
+  const mean = recent.reduce((a, b) => a + b, 0) / recent.length;
+  const variance = recent.reduce((a, b) => a + (b - mean) ** 2, 0) / recent.length;
+  const stdev = Math.sqrt(variance);
+  const latestOdds = history[history.length - 1].odds;
+  const z = stdev > 0 ? (latestOdds - mean) / stdev : 0;
+  const breakoutZ = agent.breakout_zscore ?? 1.5;
+  if (Math.abs(z) < breakoutZ) return null;
+  const action = z < 0 ? 'buy' : 'sell';
+  return { action, confidence: Math.min(1, Math.abs(z) / (breakoutZ * 2)), reason: `volatility_breakout:z=${z.toFixed(2)}` };
+}
+
+function runSignal(decisionStyle, agent, history) {
+  const latest = history[history.length - 1];
   switch (decisionStyle) {
     case 'anticipatory':
       return runAnticipatory(agent, latest);
     case 'confirmatory':
       return runConfirmatory(agent, latest);
+    case 'momentum':
+      return runMomentum(agent, history);
+    case 'mean_reversion':
+      return runMeanReversion(agent, history);
+    case 'volatility_breakout':
+      return runVolatilityBreakout(agent, history);
     case 'balanced':
     default:
       return runBalanced(agent, latest);
@@ -91,9 +152,9 @@ export function evaluateSignal(agent, history) {
   const decisionStyle = agent.decision_style || 'balanced';
   let decision = { action: 'hold', reason: 'no_signal', confidence: 0 };
 
-  const primary = runSignal(decisionStyle, agent, latest);
+  const primary = runSignal(decisionStyle, agent, history);
   decision = primary
-    ? { action: primary.action, reason: `${decisionStyle}:${latest.event}`, confidence: primary.confidence }
+    ? { action: primary.action, reason: primary.reason ?? `${decisionStyle}:${latest.event}`, confidence: primary.confidence }
     : { action: 'hold', reason: 'no_signal', confidence: 0 };
 
   // Score-State Reasoning: continuous confidence nudge based on live score diff.
