@@ -1,0 +1,264 @@
+==============================================================================
+Loaded 599 real events, reconstructed true chronological order.
+Match span: minute 0 -> 101. Mode: TRADING (odds series found)
+Proofs series: 203 proof entries loaded
+==============================================================================
+
+agent-1:volatility_breakout
+  {"market_focus":"1x2","decision_style":"volatility_breakout","confirmation_tolerance":"aggressive","score_state_mode":"momentum_only","side_bias":"none","risk_profile":"aggressive","position_sizing":"percent_of_budget","exit_rule":"stop-loss","aggression":"instant","direction_bias":"bidirectional","phase_weighting":"full_match","reentry_rule":"immediate_reentry","max_reentries":null,"reaction_latency_ms":0,"wildcard_trait":"none","max_exposure_pct":46,"max_drawdown_stop_pct":49,"percentage_stake":25,"fixed_stake":132,"stop_loss":9,"take_profit":23}
+
+agent-2:volatility_breakout
+  {"market_focus":"1x2","decision_style":"volatility_breakout","confirmation_tolerance":"aggressive","score_state_mode":"momentum_only","side_bias":"none","risk_profile":"aggressive","position_sizing":"confidence_weighted","exit_rule":"time_based","aggression":"instant","direction_bias":"bidirectional","phase_weighting":"full_match","reentry_rule":"immediate_reentry","max_reentries":null,"reaction_latency_ms":0,"wildcard_trait":"none","max_exposure_pct":29,"max_drawdown_stop_pct":38,"percentage_stake":14,"fixed_stake":113,"stop_loss":4,"take_profit":19}
+
+agent-3:volatility_breakout
+  {"market_focus":"1x2","decision_style":"volatility_breakout","confirmation_tolerance":"aggressive","score_state_mode":"momentum_only","side_bias":"none","risk_profile":"aggressive","position_sizing":"percent_of_budget","exit_rule":"signal_reversal","aggression":"instant","direction_bias":"bidirectional","phase_weighting":"full_match","reentry_rule":"immediate_reentry","max_reentries":null,"reaction_latency_ms":0,"wildcard_trait":"none","max_exposure_pct":42,"max_drawdown_stop_pct":41,"percentage_stake":18,"fixed_stake":213,"stop_loss":9,"take_profit":12}
+
+Replaying live: minute N fires at second N (--fast: no real-time pauses)...
+
+
+[0'] odds=240.000 proofs=✓ score=0-0 event=-
+
+[1'] odds=2.831 proofs=✓ score=0-0 event=-
+
+[2'] odds=2.833 proofs=✓ score=0-0 event=-
+
+[3'] odds=2.798 proofs=✓ score=0-0 event=-
+
+[4'] odds=2.759 proofs=✓ score=0-0 event=-
+
+[5'] odds=2.773 proofs=✓ score=0-0 event=-
+
+[6'] odds=2.786 proofs=✓ score=0-0 event=-
+
+[7'] odds=2.736 proofs=✓ score=0-0 event=-
+
+[8'] odds=2.742 proofs=✓ score=0-0 event=-
+
+[9'] odds=2.754 proofs=✓ score=0-0 event=-
+
+[10'] odds=2.749 proofs=✓ score=0-0 event=-
+
+[11'] odds=2.766 proofs=✓ score=0-0 event=-
+
+[12'] odds=2.774 proofs=✓ score=0-0 event=-
+[agent-1:volatility_breakout] OPEN sell stake=250.00 @odds=2.774 reason=volatility_breakout:z=1.56
+[agent-2:volatility_breakout] OPEN sell stake=72.82 @odds=2.774 reason=volatility_breakout:z=1.56
+[agent-3:volatility_breakout] OPEN sell stake=180.00 @odds=2.774 reason=volatility_breakout:z=1.56
+
+[13'] odds=2.780 proofs=✓ score=0-0 event=-
+
+[14'] odds=2.775 proofs=✓ score=0-0 event=-
+
+[15'] odds=2.802 proofs=✓ score=0-0 event=-
+
+[16'] odds=2.801 proofs=✓ score=0-0 event=-
+
+[17'] odds=2.802 proofs=✓ score=0-0 event=-
+
+[18'] odds=2.775 proofs=✓ score=0-0 event=-
+
+[19'] odds=2.724 proofs=✓ score=0-0 event=-
+[agent-3:volatility_breakout] CLOSE sell stake=180.00 pnl=-3.24 -> balance=996.76 reason=volatility_breakout:z=-2.02
+[agent-3:volatility_breakout] OPEN buy stake=179.42 @odds=2.724 reason=volatility_breakout:z=-2.02
+
+[20'] odds=2.755 proofs=✓ score=0-0 event=-
+
+[21'] odds=2.783 proofs=✓ score=0-0 event=-
+
+[22'] odds=2.793 proofs=✓ score=0-0 event=-
+
+[23'] odds=2.770 proofs=✓ score=0-0 event=-
+
+[24'] odds=2.806 proofs=✓ score=0-0 event=-
+
+[25'] odds=2.806 proofs=✓ score=0-0 event=-
+
+[26'] odds=2.806 proofs=✓ score=0-0 event=-
+
+[27'] odds=2.812 proofs=✓ score=0-0 event=-
+
+[28'] odds=2.804 proofs=✓ score=0-0 event=-
+
+[29'] odds=2.815 proofs=✓ score=0-0 event=-
+[agent-3:volatility_breakout] CLOSE buy stake=179.42 pnl=-5.99 -> balance=990.76 reason=volatility_breakout:z=1.74
+[agent-3:volatility_breakout] OPEN sell stake=178.34 @odds=2.815 reason=volatility_breakout:z=1.74
+
+[30'] odds=2.842 proofs=✓ score=0-0 event=-
+
+[31'] odds=2.828 proofs=✓ score=0-0 event=-
+
+[32'] odds=2.832 proofs=✓ score=0-0 event=-
+
+[33'] odds=2.879 proofs=✓ score=0-0 event=-
+
+[34'] odds=2.877 proofs=✓ score=0-0 event=-
+
+[35'] odds=2.844 proofs=✓ score=0-0 event=-
+
+[36'] odds=2.871 proofs=✓ score=0-0 event=-
+
+[37'] odds=2.935 proofs=✓ score=0-0 event=-
+
+[38'] odds=2.930 proofs=✓ score=0-0 event=-
+
+[39'] odds=2.979 proofs=✓ score=0-0 event=-
+
+[40'] odds=3.038 proofs=✓ score=0-0 event=-
+
+[41'] odds=3.052 proofs=✓ score=0-0 event=-
+
+[42'] odds=3.067 proofs=✓ score=0-0 event=-
+
+[43'] odds=3.084 proofs=✓ score=0-0 event=-
+
+[44'] odds=3.121 proofs=✓ score=0-0 event=-
+
+[45'] odds=3.147 proofs=✓ score=0-0 event=-
+
+[46'] odds=3.222 proofs=✓ score=0-0 event=-
+
+[47'] odds=3.287 proofs=✓ score=0-0 event=-
+
+[48'] odds=3.294 proofs=✓ score=0-0 event=-
+
+[49'] odds=3.304 proofs=✓ score=0-0 event=-
+
+[50'] odds=3.378 proofs=✓ score=0-0 event=-
+
+[51'] odds=3.385 proofs=✓ score=0-0 event=-
+
+[52'] odds=3.396 proofs=✓ score=0-0 event=-
+
+[53'] odds=3.513 proofs=✓ score=0-0 event=-
+[agent-1:volatility_breakout] CLOSE sell stake=250.00 pnl=+66.60 -> balance=1066.60 reason=take_profit:26.6%
+[agent-1:volatility_breakout] OPEN sell stake=266.65 @odds=3.513 reason=volatility_breakout:z=1.87
+
+[54'] odds=1.435 proofs=✓ score=1-0 event=goal_home
+[agent-1:volatility_breakout] CLOSE sell stake=266.65 pnl=-157.73 -> balance=908.87 reason=stop_loss:-59.2%
+[agent-1:volatility_breakout] OPEN buy stake=227.22 @odds=1.435 reason=volatility_breakout:z=-2.23
+[agent-3:volatility_breakout] CLOSE sell stake=178.34 pnl=-87.43 -> balance=903.34 reason=volatility_breakout:z=-2.23
+[agent-3:volatility_breakout] OPEN buy stake=162.60 @odds=1.435 reason=volatility_breakout:z=-2.23
+
+[55'] odds=1.435 proofs=✓ score=1-0 event=-
+
+[56'] odds=1.510 proofs=✓ score=1-0 event=-
+
+[57'] odds=1.523 proofs=✓ score=1-0 event=-
+
+[58'] odds=1.538 proofs=✓ score=1-0 event=-
+
+[59'] odds=1.562 proofs=✓ score=1-0 event=-
+
+[60'] odds=1.573 proofs=✓ score=1-0 event=-
+[agent-1:volatility_breakout] CLOSE buy stake=227.22 pnl=-21.85 -> balance=887.02 reason=stop_loss:-9.6%
+
+[61'] odds=1.567 proofs=✓ score=1-0 event=-
+
+[62'] odds=1.579 proofs=✓ score=1-0 event=-
+
+[63'] odds=1.572 proofs=✓ score=1-0 event=-
+
+[64'] odds=1.569 proofs=✓ score=1-0 event=-
+
+[65'] odds=1.568 proofs=✓ score=1-0 event=-
+
+[66'] odds=1.556 proofs=✓ score=1-0 event=-
+[agent-1:volatility_breakout] OPEN buy stake=221.76 @odds=1.556 reason=volatility_breakout:z=-1.82
+
+[67'] odds=1.554 proofs=✓ score=1-0 event=-
+
+[68'] odds=1.525 proofs=✓ score=1-0 event=-
+
+[69'] odds=1.525 proofs=✓ score=1-0 event=-
+
+[70'] odds=1.525 proofs=✓ score=1-0 event=-
+
+[71'] odds=1.509 proofs=✓ score=1-0 event=-
+
+[72'] odds=1.518 proofs=✓ score=1-0 event=-
+
+[73'] odds=1.513 proofs=✓ score=1-0 event=-
+
+[74'] odds=1.520 proofs=✓ score=1-0 event=-
+
+[75'] odds=1.516 proofs=✓ score=1-0 event=-
+
+[76'] odds=1.518 proofs=✓ score=1-0 event=-
+
+[77'] odds=1.539 proofs=✓ score=1-0 event=-
+[agent-3:volatility_breakout] CLOSE buy stake=162.60 pnl=-11.78 -> balance=891.55 reason=volatility_breakout:z=2.16
+[agent-3:volatility_breakout] OPEN sell stake=160.48 @odds=1.539 reason=volatility_breakout:z=2.16
+
+[78'] odds=1.526 proofs=✓ score=1-0 event=-
+
+[79'] odds=1.518 proofs=✓ score=1-0 event=-
+
+[80'] odds=1.481 proofs=✓ score=1-0 event=-
+[agent-3:volatility_breakout] CLOSE sell stake=160.48 pnl=-6.05 -> balance=885.50 reason=volatility_breakout:z=-2.01
+[agent-3:volatility_breakout] OPEN buy stake=159.39 @odds=1.481 reason=volatility_breakout:z=-2.01
+
+[81'] odds=1.483 proofs=✓ score=1-0 event=-
+
+[82'] odds=1.474 proofs=✓ score=1-0 event=-
+
+[83'] odds=1.468 proofs=✓ score=1-0 event=-
+
+[84'] odds=1.442 proofs=✓ score=1-1 event=goal_away
+
+[85'] odds=7.471 proofs=✓ score=1-0 event=-
+[agent-1:volatility_breakout] CLOSE buy stake=221.76 pnl=-842.98 -> balance=44.04 reason=stop_loss:-380.1%
+[agent-1:volatility_breakout] OPEN sell stake=11.01 @odds=7.471 reason=volatility_breakout:z=2.24
+[agent-3:volatility_breakout] CLOSE buy stake=159.39 pnl=-644.67 -> balance=240.84 reason=volatility_breakout:z=2.24
+[agent-3:volatility_breakout] OPEN sell stake=43.35 @odds=7.471 reason=volatility_breakout:z=2.24
+
+[86'] odds=7.595 proofs=✓ score=1-1 event=-
+
+[87'] odds=9.031 proofs=✓ score=1-1 event=-
+
+[88'] odds=9.550 proofs=✓ score=1-1 event=-
+[agent-1:volatility_breakout] CLOSE sell stake=11.01 pnl=+3.06 -> balance=47.10 reason=take_profit:27.8%
+
+[89'] odds=9.550 proofs=✓ score=1-1 event=-
+
+[90'] odds=10.400 proofs=✓ score=1-1 event=-
+
+[91'] odds=120.000 proofs=✓ score=1-2 event=goal_away
+[agent-1:volatility_breakout] OPEN sell stake=11.78 @odds=120 reason=volatility_breakout:z=2.24
+
+[92'] odds=120.000 proofs=✓ score=1-2 event=-
+
+[93'] odds=93.000 proofs=✓ score=1-2 event=-
+[agent-1:volatility_breakout] CLOSE sell stake=11.78 pnl=-2.65 -> balance=44.45 reason=stop_loss:-22.5%
+
+[94'] odds=150.000 proofs=✓ score=1-2 event=-
+
+[95'] odds=120.000 proofs=✓ score=1-2 event=-
+
+[96'] odds=160.000 proofs=✓ score=1-2 event=-
+
+[97'] odds=180.000 proofs=✓ score=1-2 event=-
+
+[98'] odds=340.000 proofs=✓ score=1-2 event=-
+[agent-1:volatility_breakout] OPEN sell stake=11.11 @odds=340 reason=volatility_breakout:z=2.09
+
+[99'] odds=250.000 proofs=✓ score=1-2 event=-
+[agent-1:volatility_breakout] CLOSE sell stake=11.11 pnl=-2.94 -> balance=41.51 reason=stop_loss:-26.5%
+
+[100'] odds=240.000 proofs=✓ score=1-2 event=-
+
+[101'] odds=240.000 proofs=✓ score=1-2 event=-
+[agent-2:volatility_breakout] CLOSE sell stake=72.82 pnl=+6227.55 -> balance=7227.55 reason=match_ended
+[agent-3:volatility_breakout] CLOSE sell stake=43.35 pnl=+1349.26 -> balance=1590.10 reason=match_ended
+
+==============================================================================
+FINAL RESULTS (live-paced replay of a real match)
+==============================================================================
+┌─────────┬───────────────────────────────┬───────────────────────┬────────┬──────┬─────────┬──────────────┬───────────┬────────────┐
+│ (index) │ name                          │ signal                │ trades │ wins │ winRate │ finalBalance │ pnl       │ roi        │
+├─────────┼───────────────────────────────┼───────────────────────┼────────┼──────┼─────────┼──────────────┼───────────┼────────────┤
+│ 0       │ 'agent-2:volatility_breakout' │ 'volatility_breakout' │ 1      │ 1    │ '100%'  │ '7227.55'    │ '6227.55' │ '+622.75%' │
+│ 1       │ 'agent-3:volatility_breakout' │ 'volatility_breakout' │ 7      │ 1    │ '14%'   │ '1590.10'    │ '590.10'  │ '+59.01%'  │
+│ 2       │ 'agent-1:volatility_breakout' │ 'volatility_breakout' │ 7      │ 2    │ '29%'   │ '41.51'      │ '-958.49' │ '-95.85%'  │
+└─────────┴───────────────────────────────┴───────────────────────┴────────┴──────┴─────────┴──────────────┴───────────┴────────────┘
+
+🏆 Best performer: agent-2:volatility_breakout (+622.75%, 1 trades)
