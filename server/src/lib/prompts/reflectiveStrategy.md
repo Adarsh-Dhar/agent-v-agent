@@ -61,7 +61,7 @@ Return ONLY a valid JSON object with this exact structure:
 ```json
 {
   "market_focus": "1x2|asian_handicap|over_under|multi_market",
-  "decision_style": "anticipatory|confirmatory|balanced|volatility_breakout",
+  "decision_style": "volatility_breakout",
   "confirmation_tolerance": "aggressive|conservative|adaptive",
   "score_state_mode": "favor_chasing|favor_leading|momentum_only",
   "side_bias": "home|away|favorite|underdog|none",

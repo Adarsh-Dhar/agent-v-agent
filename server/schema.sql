@@ -131,7 +131,7 @@ ALTER TABLE public.agents
 ADD COLUMN IF NOT EXISTS market_focus TEXT DEFAULT '1x2',
 ADD COLUMN IF NOT EXISTS ah_line_band TEXT,                    -- 'tight' | 'deep', only used when market_focus = 'asian_handicap'
 ADD COLUMN IF NOT EXISTS ou_line_band TEXT,                    -- 'low' | 'mid' | 'high', only used when market_focus = 'over_under'
-ADD COLUMN IF NOT EXISTS decision_style TEXT DEFAULT 'balanced',      -- anticipatory | confirmatory | balanced | volatility_breakout
+ADD COLUMN IF NOT EXISTS decision_style TEXT DEFAULT 'volatility_breakout',      -- volatility_breakout (only surviving decision style)
 ADD COLUMN IF NOT EXISTS confirmation_tolerance TEXT DEFAULT 'adaptive', -- aggressive | conservative | adaptive
 ADD COLUMN IF NOT EXISTS score_state_mode TEXT DEFAULT 'momentum_only',  -- favor_chasing | favor_leading | momentum_only
 ADD COLUMN IF NOT EXISTS side_bias TEXT DEFAULT 'none',        -- home | away | favorite | underdog | none
@@ -149,9 +149,19 @@ ALTER TABLE public.agents ADD CONSTRAINT check_phase_weighting
 
 ALTER TABLE public.agents ADD CONSTRAINT check_market_focus
   CHECK (market_focus IN ('1x2','asian_handicap','over_under','multi_market'));
+
+-- Backfill: decision_style/wildcard_trait values below are being dropped
+-- from the allowed sets. Any existing row still on one of them would
+-- violate the narrowed CHECK constraints added right after this, so
+-- reassign them first.
+UPDATE public.agents SET decision_style = 'volatility_breakout'
+  WHERE decision_style IN ('anticipatory','confirmatory','balanced');
+UPDATE public.agents SET wildcard_trait = 'none'
+  WHERE wildcard_trait IN ('rivalry_rage','nostalgia_trader');
+
 ALTER TABLE public.agents DROP CONSTRAINT IF EXISTS check_decision_style;
 ALTER TABLE public.agents ADD CONSTRAINT check_decision_style
-  CHECK (decision_style IN ('anticipatory','confirmatory','balanced','volatility_breakout'));
+  CHECK (decision_style IN ('volatility_breakout'));
 ALTER TABLE public.agents ADD CONSTRAINT check_confirmation_tolerance
   CHECK (confirmation_tolerance IN ('aggressive','conservative','adaptive'));
 ALTER TABLE public.agents ADD CONSTRAINT check_score_state_mode
@@ -160,10 +170,10 @@ ALTER TABLE public.agents ADD CONSTRAINT check_side_bias
   CHECK (side_bias IN ('home','away','favorite','underdog','none'));
 ALTER TABLE public.agents ADD CONSTRAINT check_risk_profile
   CHECK (risk_profile IN ('conservative','aggressive','martingale','flat_stake'));
+ALTER TABLE public.agents DROP CONSTRAINT IF EXISTS check_wildcard_trait;
 ALTER TABLE public.agents ADD CONSTRAINT check_wildcard_trait
   CHECK (wildcard_trait IN ('none','chaos_agent','comeback_romantic','revenge_trader',
-    'superstition','weather_prophet','rivalry_rage','bandwagon','contrarian',
-    'last_minute_believer','nostalgia_trader'));
+    'superstition','weather_prophet','bandwagon','contrarian','last_minute_believer'));
 
 -- H. Match-Phase Weighting / I. Re-entry Rule / L. Risk Ceiling columns
 ALTER TABLE public.agents

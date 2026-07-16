@@ -318,13 +318,6 @@ function applyWildcardTrait(agent, decision, snapshot) {
       }
       return decision;
     }
-    case 'rivalry_rage': {
-      // More aggressive/erratic if cards/fouls have spiked (proxied by recent red_card events).
-      if (snapshot.event === 'red_card_home' || snapshot.event === 'red_card_away') {
-        return { ...decision, confidence: Math.min(1, decision.confidence + 0.25), reason: `${decision.reason}+rivalry_rage` };
-      }
-      return decision;
-    }
     case 'bandwagon': {
       // Copies whichever direction the market/odds are already moving, amplifying trends.
       const recent = history.slice(-3).map((h) => h.odds);
@@ -340,11 +333,6 @@ function applyWildcardTrait(agent, decision, snapshot) {
     case 'last_minute_believer':
       // Dismisses everything before stoppage time; zeroes out phase.multiplier via the reason flag,
       // actual gating happens in tick() by checking snapshot.minute directly (see tick() diff below).
-      return decision;
-    case 'nostalgia_trader':
-      // Biased toward the team with more "star" lineup names.
-      // [FEED-SHAPE TBD]: no roster/lineup data is available in this codebase
-      // today (no lineup endpoint in txline.js). No-op until roster data exists.
       return decision;
     default:
       return decision;

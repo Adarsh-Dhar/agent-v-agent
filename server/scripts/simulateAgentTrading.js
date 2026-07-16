@@ -56,7 +56,7 @@ const FULLTIME_MINUTE = 90;
 // ---------------------------------------------------------------------------
 const FACTORS = {
   market_focus: ['1x2', 'asian_handicap', 'over_under', 'multi_market'],
-  decision_style: ['anticipatory', 'confirmatory', 'balanced', 'volatility_breakout'],
+  decision_style: ['volatility_breakout'],
   confirmation_tolerance: ['aggressive', 'conservative', 'adaptive'],
   score_state_mode: ['favor_chasing', 'favor_leading', 'momentum_only'],
   side_bias: ['home', 'away', 'favorite', 'underdog', 'none'],
@@ -67,7 +67,7 @@ const FACTORS = {
   direction_bias: ['long_only', 'short_only', 'bidirectional'],
   phase_weighting: ['early', 'pre_halftime', 'second_half', 'late_stoppage', 'full_match'],
   reentry_rule: ['no_reentry', 'immediate_reentry', 'capped_reentry'],
-  wildcard_trait: ['none', 'chaos_agent', 'comeback_romantic', 'revenge_trader', 'superstition', 'weather_prophet', 'rivalry_rage', 'bandwagon', 'contrarian', 'last_minute_believer', 'nostalgia_trader'],
+  wildcard_trait: ['none', 'chaos_agent', 'comeback_romantic', 'revenge_trader', 'superstition', 'weather_prophet', 'bandwagon', 'contrarian', 'last_minute_believer'],
 };
 const SCORE_STATE_EVENTS = ['goal_home', 'goal_away', 'red_card_away', 'red_card_home'];
 
@@ -175,10 +175,8 @@ function generateRandomConfig() {
 // weak ones.
 // ---------------------------------------------------------------------------
 function generateAggressiveConfig() {
-  // Rotate through the decision styles that actually respond to odds ticks
-  // (anticipatory fires on buildup events, confirmatory on confirmed events,
-  // balanced requires both to agree).
-  const DECISION_STYLES = ['anticipatory', 'confirmatory', 'balanced', 'volatility_breakout'];
+  // volatility_breakout is the only decision style still wired up.
+  const DECISION_STYLES = ['volatility_breakout'];
   const decisionStyle = randomChoice(DECISION_STYLES);
 
   // Every factor below is randomized (weighted, not hardcoded) so agents stay

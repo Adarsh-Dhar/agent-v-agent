@@ -10,7 +10,7 @@ const sampleAgent = {
     market_focus: "1x2",
     ah_line_band: null,
     ou_line_band: null,
-    decision_style: "balanced",
+    decision_style: "volatility_breakout",
     confirmation_tolerance: "adaptive",
     score_state_mode: "momentum_only",
     side_bias: "none",

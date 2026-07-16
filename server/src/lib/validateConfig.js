@@ -2,15 +2,14 @@
 const MARKET_FOCUS = ['1x2', 'asian_handicap', 'over_under', 'multi_market'];
 const AH_LINE_BAND = ['tight', 'deep'];
 const OU_LINE_BAND = ['low', 'mid', 'high'];
-const DECISION_STYLE = ['anticipatory', 'confirmatory', 'balanced', 'volatility_breakout'];
+const DECISION_STYLE = ['volatility_breakout'];
 const CONFIRMATION_TOLERANCE = ['aggressive', 'conservative', 'adaptive'];
 const SCORE_STATE_MODE = ['favor_chasing', 'favor_leading', 'momentum_only'];
 const SIDE_BIAS = ['home', 'away', 'favorite', 'underdog', 'none'];
 const RISK_PROFILE = ['conservative', 'aggressive', 'martingale', 'flat_stake'];
 const WILDCARD_TRAIT = [
   'none', 'chaos_agent', 'comeback_romantic', 'revenge_trader', 'superstition',
-  'weather_prophet', 'rivalry_rage', 'bandwagon', 'contrarian',
-  'last_minute_believer', 'nostalgia_trader',
+  'weather_prophet', 'bandwagon', 'contrarian', 'last_minute_believer',
 ];
 
 const SIZING = ['fixed', 'percent_of_budget', 'percentage', 'confidence_weighted'];

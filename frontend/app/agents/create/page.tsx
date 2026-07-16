@@ -24,7 +24,7 @@ export default function CreateAgentPage() {
     market_focus: '1x2' as ConfigOptions.MarketFocus,
     ah_line_band: 'tight' as ConfigOptions.AhLineBand,
     ou_line_band: 'mid' as ConfigOptions.OuLineBand,
-    decision_style: 'balanced' as ConfigOptions.DecisionStyle,
+    decision_style: 'volatility_breakout' as ConfigOptions.DecisionStyle,
     confirmation_tolerance: 'adaptive' as ConfigOptions.ConfirmationTolerance,
     score_state_mode: 'momentum_only' as ConfigOptions.ScoreStateMode,
     side_bias: 'none' as ConfigOptions.SideBias,

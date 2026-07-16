@@ -12,7 +12,7 @@ const SERVER_URL = process.env.SERVER_URL || 'http://localhost:3000';
 // Factor choices based on the 10-factor config
 const FACTORS = {
   market_focus: ['1x2', 'asian_handicap', 'over_under', 'multi_market'],
-  decision_style: ['anticipatory', 'confirmatory', 'balanced', 'volatility_breakout'],
+  decision_style: ['volatility_breakout'],
   confirmation_tolerance: ['aggressive', 'conservative', 'adaptive'],
   score_state_mode: ['favor_chasing', 'favor_leading', 'momentum_only'],
   side_bias: ['home', 'away', 'favorite', 'underdog', 'none'],
@@ -61,11 +61,9 @@ const FACTORS = {
     'revenge_trader',
     'superstition',
     'weather_prophet',
-    'rivalry_rage',
     'bandwagon',
     'contrarian',
-    'last_minute_believer',
-    'nostalgia_trader'
+    'last_minute_believer'
   ]
 };
 

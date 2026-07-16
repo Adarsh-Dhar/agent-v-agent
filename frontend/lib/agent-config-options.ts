@@ -4,7 +4,7 @@
 export const MARKET_FOCUS = ['1x2', 'asian_handicap', 'over_under', 'multi_market'] as const
 export const AH_LINE_BAND = ['tight', 'deep'] as const
 export const OU_LINE_BAND = ['low', 'mid', 'high'] as const
-export const DECISION_STYLE = ['anticipatory', 'confirmatory', 'balanced', 'volatility_breakout'] as const
+export const DECISION_STYLE = ['volatility_breakout'] as const
 export const CONFIRMATION_TOLERANCE = ['aggressive', 'conservative', 'adaptive'] as const
 export const SCORE_STATE_MODE = ['favor_chasing', 'favor_leading', 'momentum_only'] as const
 export const SIDE_BIAS = ['home', 'away', 'favorite', 'underdog', 'none'] as const
@@ -16,11 +16,9 @@ export const WILDCARD_TRAIT = [
   'revenge_trader',
   'superstition',
   'weather_prophet',
-  'rivalry_rage',
   'bandwagon',
   'contrarian',
   'last_minute_believer',
-  'nostalgia_trader',
 ] as const
 export const SIZING = ['fixed', 'percent_of_budget', 'percentage', 'confidence_weighted'] as const
 export const EXIT = ['stop_loss_take_profit', 'stop-loss', 'time_based', 'signal_reversal'] as const
