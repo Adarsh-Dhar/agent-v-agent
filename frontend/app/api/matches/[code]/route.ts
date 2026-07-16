@@ -282,6 +282,92 @@ export async function POST(
   }
 }
 
+// Update match status (e.g. start the match for everyone)
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ code: string }> }
+) {
+  if (!supabaseAdmin) {
+    return NextResponse.json(
+      { error: 'Supabase not configured' },
+      { status: 500 }
+    )
+  }
+
+  try {
+    let code: string
+    try {
+      ({ code } = await params)
+    } catch (paramError) {
+      console.error('[v0] Failed to parse route params:', paramError)
+      return NextResponse.json({ error: 'Bad Request: Invalid route parameters' }, { status: 400 })
+    }
+
+    if (!code || typeof code !== 'string' || code.trim().length === 0) {
+      return NextResponse.json({ error: 'Bad Request: Match code is required' }, { status: 400 })
+    }
+
+    let body
+    try {
+      body = await request.json()
+    } catch (parseError) {
+      console.error('[v0] Failed to parse request body:', parseError)
+      return NextResponse.json({ error: 'Bad Request: Invalid JSON body' }, { status: 400 })
+    }
+
+    const { status } = body
+    const allowedStatuses = ['pending', 'active', 'completed']
+
+    if (!status || !allowedStatuses.includes(status)) {
+      return NextResponse.json(
+        { error: `Bad Request: status must be one of ${allowedStatuses.join(', ')}` },
+        { status: 400 }
+      )
+    }
+
+    const { data: match, error: matchError } = await supabaseAdmin
+      .from('matches')
+      .select('*')
+      .eq('code', code.toUpperCase())
+      .single()
+
+    if (matchError && matchError.code !== 'PGRST116') {
+      console.error('[v0] Database error fetching match:', matchError)
+      return NextResponse.json(
+        { error: 'Internal Server Error: Failed to fetch match' },
+        { status: 500 }
+      )
+    }
+
+    if (!match || matchError?.code === 'PGRST116') {
+      return NextResponse.json(
+        { error: 'Not Found: Match with this code does not exist' },
+        { status: 404 }
+      )
+    }
+
+    const { data: updatedMatch, error: updateError } = await supabaseAdmin
+      .from('matches')
+      .update({ status, updated_at: new Date().toISOString() })
+      .eq('id', match.id)
+      .select()
+      .single()
+
+    if (updateError) {
+      console.error('[v0] Database error updating match status:', updateError)
+      return NextResponse.json(
+        { error: 'Internal Server Error: Failed to update match status' },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json({ match: updatedMatch }, { status: 200 })
+  } catch (error) {
+    console.error('[v0] Error in PATCH /api/matches/[code]:', error)
+    return NextResponse.json({ error: 'Internal Server Error: Failed to update match' }, { status: 500 })
+  }
+}
+
 // Delete a match
 export async function DELETE(
   request: NextRequest,

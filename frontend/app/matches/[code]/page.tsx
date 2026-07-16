@@ -21,8 +21,14 @@ export default function MatchDetailPage({ params }: { params: Promise<{ code: st
   const [error, setError] = useState<string | null>(null)
   const [joining, setJoining] = useState(false)
   const [copied, setCopied] = useState(false)
-  const [matchStarted, setMatchStarted] = useState(false)
+  const [starting, setStarting] = useState(false)
   const [countdown, setCountdown] = useState<number | null>(null)
+  const [showCharts, setShowCharts] = useState(false)
+
+  // Single source of truth for "has the match started" — comes from the
+  // database (match.status) so every connected player sees the same state,
+  // instead of a local-only flag that only ever changed in one browser tab.
+  const matchStarted = match?.status === 'active' || match?.status === 'completed'
 
   const initCode = async () => {
     try {
@@ -94,18 +100,70 @@ export default function MatchDetailPage({ params }: { params: Promise<{ code: st
   useEffect(() => {
     if (code) {
       fetchMatchData()
-      // Re-fetch after a short delay to ensure fresh data (useful after joining)
-      const timer = setTimeout(() => {
+      // Keep polling while this match page is open. This is what makes the
+      // match feel "multiplayer": when one player starts the match (or a new
+      // player joins), every other browser polling this endpoint picks up
+      // the change within a few seconds and updates its own UI.
+      const interval = setInterval(() => {
         fetchMatchData()
-      }, 1000)
-      return () => clearTimeout(timer)
+      }, 3000)
+      return () => clearInterval(interval)
     }
   }, [code, fetchMatchData])
 
+  // Once the DB says the match is active, run a local countdown animation
+  // and then reveal the charts. This runs independently in every browser
+  // tab, so all players see the same countdown-then-charts sequence shortly
+  // after whichever player clicked "Start Match".
+  useEffect(() => {
+    if (matchStarted && countdown === null && !showCharts) {
+      setCountdown(3)
+    }
+  }, [matchStarted, countdown, showCharts])
+
+  useEffect(() => {
+    if (countdown === null) return
+
+    if (countdown <= 0) {
+      const timeout = setTimeout(() => {
+        setShowCharts(true)
+        setCountdown(null)
+      }, 800)
+      return () => clearTimeout(timeout)
+    }
+
+    const timeout = setTimeout(() => {
+      setCountdown((c) => (c !== null ? c - 1 : c))
+    }, 1000)
+    return () => clearTimeout(timeout)
+  }, [countdown])
+
   const isPlayerInMatch = user && players.some(p => p.player_id === user.id)
 
-  const startMatch = () => {
-    setCountdown(3)
+  const startMatch = async () => {
+    setStarting(true)
+    try {
+      const response = await fetch(`/api/matches/${code}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'active' }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to start match')
+      }
+
+      // Update local state immediately for the player who clicked the
+      // button; every other player's poll will pick up match.status shortly.
+      setMatch(data.match)
+    } catch (err) {
+      console.error('[v0] Error starting match:', err)
+      alert(err instanceof Error ? err.message : 'Failed to start match')
+    } finally {
+      setStarting(false)
+    }
   }
 
   const copyCode = () => {
@@ -401,10 +459,20 @@ export default function MatchDetailPage({ params }: { params: Promise<{ code: st
         {isPlayerInMatch && !matchStarted && (
           <button
             onClick={startMatch}
-            className="mb-8 flex items-center gap-2 px-8 py-4 bg-gradient-to-r from-primary to-secondary text-background rounded-lg font-bold text-lg hover:shadow-lg hover:shadow-primary/50 transition-all"
+            disabled={starting}
+            className="mb-8 flex items-center gap-2 px-8 py-4 bg-gradient-to-r from-primary to-secondary text-background rounded-lg font-bold text-lg hover:shadow-lg hover:shadow-primary/50 transition-all disabled:opacity-50"
           >
-            <Play className="w-6 h-6" />
-            Start Match
+            {starting ? (
+              <>
+                <Loader className="w-5 h-5 animate-spin" />
+                Starting...
+              </>
+            ) : (
+              <>
+                <Play className="w-6 h-6" />
+                Start Match
+              </>
+            )}
           </button>
         )}
 
@@ -504,7 +572,7 @@ export default function MatchDetailPage({ params }: { params: Promise<{ code: st
         )}
 
         {/* Agent Performance Charts */}
-        {matchStarted && players.length > 0 && (
+        {showCharts && players.length > 0 && (
           <div className="mb-12">
             <h2 className="text-3xl font-bold gradient-text mb-8">Agent Performance</h2>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
