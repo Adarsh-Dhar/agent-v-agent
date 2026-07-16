@@ -2,7 +2,7 @@
 const MARKET_FOCUS = ['1x2', 'asian_handicap', 'over_under', 'multi_market'];
 const AH_LINE_BAND = ['tight', 'deep'];
 const OU_LINE_BAND = ['low', 'mid', 'high'];
-const DECISION_STYLE = ['anticipatory', 'confirmatory', 'balanced', 'momentum', 'mean_reversion', 'volatility_breakout'];
+const DECISION_STYLE = ['anticipatory', 'confirmatory', 'balanced', 'volatility_breakout'];
 const CONFIRMATION_TOLERANCE = ['aggressive', 'conservative', 'adaptive'];
 const SCORE_STATE_MODE = ['favor_chasing', 'favor_leading', 'momentum_only'];
 const SIDE_BIAS = ['home', 'away', 'favorite', 'underdog', 'none'];
@@ -180,19 +180,9 @@ export function validateAgentConfig(body) {
     }
   }
 
-  // Odds-only signal family (momentum / mean_reversion / volatility_breakout).
-  if (body.odds_lookback_ticks !== undefined) {
-    if (typeof body.odds_lookback_ticks !== 'number' || body.odds_lookback_ticks < 2 || body.odds_lookback_ticks > 30) {
-      errors.push('odds_lookback_ticks must be a number between 2 and 30');
-    }
-  }
-
-  if (body.odds_threshold_pct !== undefined) {
-    if (typeof body.odds_threshold_pct !== 'number' || body.odds_threshold_pct < 0.5 || body.odds_threshold_pct > 15) {
-      errors.push('odds_threshold_pct must be a number between 0.5 and 15');
-    }
-  }
-
+  // Odds-only signal family (volatility_breakout is the only surviving member —
+  // momentum and mean_reversion were removed along with odds_lookback_ticks /
+  // odds_threshold_pct, which only they consumed).
   if (body.volatility_window !== undefined) {
     if (typeof body.volatility_window !== 'number' || body.volatility_window < 3 || body.volatility_window > 20) {
       errors.push('volatility_window must be a number between 3 and 20');

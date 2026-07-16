@@ -131,7 +131,7 @@ ALTER TABLE public.agents
 ADD COLUMN IF NOT EXISTS market_focus TEXT DEFAULT '1x2',
 ADD COLUMN IF NOT EXISTS ah_line_band TEXT,                    -- 'tight' | 'deep', only used when market_focus = 'asian_handicap'
 ADD COLUMN IF NOT EXISTS ou_line_band TEXT,                    -- 'low' | 'mid' | 'high', only used when market_focus = 'over_under'
-ADD COLUMN IF NOT EXISTS decision_style TEXT DEFAULT 'balanced',      -- anticipatory | confirmatory | balanced
+ADD COLUMN IF NOT EXISTS decision_style TEXT DEFAULT 'balanced',      -- anticipatory | confirmatory | balanced | volatility_breakout
 ADD COLUMN IF NOT EXISTS confirmation_tolerance TEXT DEFAULT 'adaptive', -- aggressive | conservative | adaptive
 ADD COLUMN IF NOT EXISTS score_state_mode TEXT DEFAULT 'momentum_only',  -- favor_chasing | favor_leading | momentum_only
 ADD COLUMN IF NOT EXISTS side_bias TEXT DEFAULT 'none',        -- home | away | favorite | underdog | none
@@ -149,8 +149,9 @@ ALTER TABLE public.agents ADD CONSTRAINT check_phase_weighting
 
 ALTER TABLE public.agents ADD CONSTRAINT check_market_focus
   CHECK (market_focus IN ('1x2','asian_handicap','over_under','multi_market'));
+ALTER TABLE public.agents DROP CONSTRAINT IF EXISTS check_decision_style;
 ALTER TABLE public.agents ADD CONSTRAINT check_decision_style
-  CHECK (decision_style IN ('anticipatory','confirmatory','balanced'));
+  CHECK (decision_style IN ('anticipatory','confirmatory','balanced','volatility_breakout'));
 ALTER TABLE public.agents ADD CONSTRAINT check_confirmation_tolerance
   CHECK (confirmation_tolerance IN ('aggressive','conservative','adaptive'));
 ALTER TABLE public.agents ADD CONSTRAINT check_score_state_mode
@@ -187,7 +188,11 @@ ADD COLUMN IF NOT EXISTS volatility_timeframe INTEGER,
 ADD COLUMN IF NOT EXISTS mean_reversion_threshold NUMERIC,
 ADD COLUMN IF NOT EXISTS momentum_threshold NUMERIC,
 ADD COLUMN IF NOT EXISTS time_decay_start INTEGER,
-ADD COLUMN IF NOT EXISTS time_decay_end INTEGER;
+ADD COLUMN IF NOT EXISTS time_decay_end INTEGER,
+ADD COLUMN IF NOT EXISTS odds_lookback_ticks INTEGER DEFAULT 3,
+ADD COLUMN IF NOT EXISTS odds_threshold_pct NUMERIC DEFAULT 2,
+ADD COLUMN IF NOT EXISTS volatility_window INTEGER DEFAULT 6,
+ADD COLUMN IF NOT EXISTS breakout_zscore NUMERIC DEFAULT 1.5;
 
 -- Additional position sizing parameter for B. Position Sizing
 ALTER TABLE public.agents

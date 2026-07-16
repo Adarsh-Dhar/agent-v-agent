@@ -78,37 +78,12 @@ function runBalanced(agent, latest) {
 // when live event coverage (goals/red cards) is too sparse to trade on, and
 // it's what actually uses the `history` array evaluateSignal already
 // receives but the event-based styles above never look at.
+//
+// momentum and mean_reversion (both driven off pctChange over
+// odds_lookback_ticks / odds_threshold_pct) have been removed as dead
+// decision styles — volatility_breakout is the only surviving member of
+// this family.
 // ---------------------------------------------------------------------------
-
-function pctChange(history, lookback) {
-  if (history.length <= lookback) return null;
-  const current = history[history.length - 1].odds;
-  const past = history[history.length - 1 - lookback].odds;
-  if (!current || !past) return null;
-  return (current - past) / past;
-}
-
-function runMomentum(agent, history) {
-  const lookback = agent.odds_lookback_ticks ?? 3;
-  const threshold = (agent.odds_threshold_pct ?? 2) / 100;
-  const change = pctChange(history, lookback);
-  if (change === null || Math.abs(change) < threshold) return null;
-  // odds falling (shortening) = market gaining confidence -> bet the move continues
-  const action = change < 0 ? 'buy' : 'sell';
-  const confidence = Math.min(1, Math.abs(change) / (threshold * 3));
-  return { action, confidence, reason: `momentum:${(change * 100).toFixed(1)}%` };
-}
-
-function runMeanReversion(agent, history) {
-  const lookback = agent.odds_lookback_ticks ?? 3;
-  const threshold = (agent.odds_threshold_pct ?? 2) / 100;
-  const change = pctChange(history, lookback);
-  if (change === null || Math.abs(change) < threshold) return null;
-  // fade the move -- bet it snaps back
-  const action = change < 0 ? 'sell' : 'buy';
-  const confidence = Math.min(1, Math.abs(change) / (threshold * 3));
-  return { action, confidence, reason: `mean_reversion:${(change * 100).toFixed(1)}%` };
-}
 
 function runVolatilityBreakout(agent, history) {
   const window = agent.volatility_window ?? 6;
@@ -133,10 +108,6 @@ function runSignal(decisionStyle, agent, history) {
       return runAnticipatory(agent, latest);
     case 'confirmatory':
       return runConfirmatory(agent, latest);
-    case 'momentum':
-      return runMomentum(agent, history);
-    case 'mean_reversion':
-      return runMeanReversion(agent, history);
     case 'volatility_breakout':
       return runVolatilityBreakout(agent, history);
     case 'balanced':

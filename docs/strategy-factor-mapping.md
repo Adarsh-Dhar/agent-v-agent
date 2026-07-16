@@ -24,7 +24,7 @@
 ### 2. Decision Style
 
 **Current Schema**: ✅ FULLY IMPLEMENTED
-- `decision_style`: anticipatory, confirmatory, balanced
+- `decision_style`: anticipatory, confirmatory, balanced, volatility_breakout
 
 **Database Columns**:
 - `decision_style` TEXT ✅
@@ -33,7 +33,9 @@
 - Anticipatory fires on pre-goal buildup events (red cards) before VAR confirmation
 - Confirmatory waits for confirmed events (goals, VAR'd cards, penalties)
 - Balanced requires both readings to agree on direction before firing
+- Volatility_breakout trades odds-only z-score breakouts over `volatility_window` / `breakout_zscore`, independent of match events
 - [FEED-SHAPE TBD]: Currently keys off same `latest.event` field; true possession/shot stream pending feed upgrade
+- `momentum` and `mean_reversion` were removed as dead decision styles (never wired into the DB constraint, the LLM reflection schema, the frontend presets, or the agent-generation scripts — only `validateConfig.js`/`strategyEngine.js` knew about them)
 
 ---
 
@@ -194,6 +196,7 @@ The following columns are no longer used but left in the schema to avoid destruc
 - `mean_reversion_threshold`
 - `momentum_threshold`
 - `time_decay_start`, `time_decay_end`
+- `odds_lookback_ticks`, `odds_threshold_pct` — only consumed by the now-removed `momentum`/`mean_reversion` decision styles; `volatility_breakout` uses `volatility_window`/`breakout_zscore` instead
 
 A follow-up cleanup migration can drop these once the new config has run in production.
 

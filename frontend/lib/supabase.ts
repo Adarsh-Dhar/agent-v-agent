@@ -31,6 +31,49 @@ export type Agent = {
   status: 'active' | 'inactive' | 'paused'
   created_at: string
   updated_at: string
+  // New config-factor architecture fields
+  market_focus?: string
+  ah_line_band?: string
+  ou_line_band?: string
+  decision_style?: string
+  confirmation_tolerance?: string
+  score_state_mode?: string
+  side_bias?: string
+  risk_profile?: string
+  reaction_latency_ms?: number
+  context_venue_aware?: boolean
+  context_weather_aware?: boolean
+  context_competition_tier_aware?: boolean
+  wildcard_trait?: string
+  phase_weighting?: string
+  max_reentries?: number
+  reentry_rule?: string
+  max_exposure_pct?: number
+  max_drawdown_stop_pct?: number
+  target_selection?: string
+  portfolio_behavior?: string
+  volatility_threshold?: number
+  volatility_timeframe?: number
+  mean_reversion_threshold?: number
+  momentum_threshold?: number
+  time_decay_start?: number
+  time_decay_end?: number
+  confidence_weighted?: boolean
+  time_based_exit_time?: string
+  confirmation_threshold?: number
+  odds_lookback_ticks?: number
+  odds_threshold_pct?: number
+  volatility_window?: number
+  breakout_zscore?: number
+  adaptivity_mode?: string
+  llm_reflection_enabled?: boolean
+  last_reflection_timestamp?: string
+  match_id?: string
+  owner?: string
+  pid?: number
+  secondary_signal_type?: string
+  secondary_signal_threshold?: number
+  score_state_triggers?: string[]
 }
 
 export type Game = {

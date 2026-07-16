@@ -3,8 +3,9 @@ export interface AgentPreset {
   name: string
   description: string
   marketFocus: '1x2' | 'asian_handicap' | 'over_under' | 'multi_market'
-  decisionStyle: 'anticipatory' | 'confirmatory' | 'balanced'
-  confirmationTolerance: 'instant' | 'confirmation' | 'cooldown'
+  decisionStyle: 'anticipatory' | 'confirmatory' | 'balanced' | 'volatility_breakout'
+  aggressionType: 'instant' | 'confirmation' | 'cooldown'
+  confirmationTolerance: 'aggressive' | 'conservative' | 'adaptive'
   phaseWeighting: 'early' | 'pre_halftime' | 'second_half' | 'late_stoppage' | 'full_match'
   sideBias: 'home' | 'away' | 'favorite' | 'underdog' | 'none'
   positionSizing: 'fixed' | 'percentage' | 'confidence_weighted'
@@ -12,6 +13,8 @@ export interface AgentPreset {
   contextVenueAware: boolean
   contextWeatherAware: boolean
   wildcardTrait: string
+  volatilityWindow?: number
+  breakoutZscore?: number
 }
 
 export const AGENT_PRESETS: AgentPreset[] = [
@@ -21,7 +24,8 @@ export const AGENT_PRESETS: AgentPreset[] = [
     description: 'Fires on high-danger possessions before goals - capitalizes on pre-event movements',
     marketFocus: '1x2',
     decisionStyle: 'anticipatory',
-    confirmationTolerance: 'instant',
+    aggressionType: 'instant',
+    confirmationTolerance: 'aggressive',
     phaseWeighting: 'early',
     sideBias: 'none',
     positionSizing: 'fixed',
@@ -36,7 +40,8 @@ export const AGENT_PRESETS: AgentPreset[] = [
     description: 'Only trades on confirmed goals or official VAR outcomes - prioritizes safety',
     marketFocus: '1x2',
     decisionStyle: 'confirmatory',
-    confirmationTolerance: 'confirmation',
+    aggressionType: 'confirmation',
+    confirmationTolerance: 'conservative',
     phaseWeighting: 'full_match',
     sideBias: 'none',
     positionSizing: 'percentage',
@@ -51,7 +56,8 @@ export const AGENT_PRESETS: AgentPreset[] = [
     description: 'Blends anticipatory and confirmatory signals with score-state bias',
     marketFocus: '1x2',
     decisionStyle: 'balanced',
-    confirmationTolerance: 'cooldown',
+    aggressionType: 'cooldown',
+    confirmationTolerance: 'adaptive',
     phaseWeighting: 'second_half',
     sideBias: 'none',
     positionSizing: 'confidence_weighted',
@@ -66,7 +72,8 @@ export const AGENT_PRESETS: AgentPreset[] = [
     description: 'Focuses on Asian Handicap markets with tight line band preferences',
     marketFocus: 'asian_handicap',
     decisionStyle: 'balanced',
-    confirmationTolerance: 'confirmation',
+    aggressionType: 'confirmation',
+    confirmationTolerance: 'conservative',
     phaseWeighting: 'pre_halftime',
     sideBias: 'none',
     positionSizing: 'percentage',
@@ -81,7 +88,8 @@ export const AGENT_PRESETS: AgentPreset[] = [
     description: 'Tracks possession momentum and shooting patterns for Over/Under opportunities',
     marketFocus: 'over_under',
     decisionStyle: 'anticipatory',
-    confirmationTolerance: 'instant',
+    aggressionType: 'instant',
+    confirmationTolerance: 'aggressive',
     phaseWeighting: 'late_stoppage',
     sideBias: 'none',
     positionSizing: 'fixed',
@@ -96,7 +104,8 @@ export const AGENT_PRESETS: AgentPreset[] = [
     description: 'Favors underdog teams with comeback wildcard trait - emotional betting style',
     marketFocus: '1x2',
     decisionStyle: 'anticipatory',
-    confirmationTolerance: 'cooldown',
+    aggressionType: 'cooldown',
+    confirmationTolerance: 'adaptive',
     phaseWeighting: 'second_half',
     sideBias: 'underdog',
     positionSizing: 'confidence_weighted',
@@ -111,7 +120,8 @@ export const AGENT_PRESETS: AgentPreset[] = [
     description: 'Reverses losing trades with the revenge trader wildcard - responds to losses',
     marketFocus: '1x2',
     decisionStyle: 'balanced',
-    confirmationTolerance: 'instant',
+    aggressionType: 'instant',
+    confirmationTolerance: 'aggressive',
     phaseWeighting: 'full_match',
     sideBias: 'none',
     positionSizing: 'fixed',
@@ -126,7 +136,8 @@ export const AGENT_PRESETS: AgentPreset[] = [
     description: 'Takes opposite positions to consensus - thrives in unexpected situations',
     marketFocus: 'multi_market',
     decisionStyle: 'confirmatory',
-    confirmationTolerance: 'confirmation',
+    aggressionType: 'confirmation',
+    confirmationTolerance: 'conservative',
     phaseWeighting: 'early',
     sideBias: 'none',
     positionSizing: 'percentage',
@@ -141,7 +152,8 @@ export const AGENT_PRESETS: AgentPreset[] = [
     description: 'Only activates in final 15 minutes with high-conviction trades',
     marketFocus: '1x2',
     decisionStyle: 'anticipatory',
-    confirmationTolerance: 'instant',
+    aggressionType: 'instant',
+    confirmationTolerance: 'aggressive',
     phaseWeighting: 'late_stoppage',
     sideBias: 'none',
     positionSizing: 'fixed',
@@ -156,7 +168,8 @@ export const AGENT_PRESETS: AgentPreset[] = [
     description: 'Weather-aware trading focusing on adverse conditions affecting play',
     marketFocus: 'over_under',
     decisionStyle: 'balanced',
-    confirmationTolerance: 'confirmation',
+    aggressionType: 'confirmation',
+    confirmationTolerance: 'conservative',
     phaseWeighting: 'full_match',
     sideBias: 'none',
     positionSizing: 'confidence_weighted',
@@ -164,5 +177,23 @@ export const AGENT_PRESETS: AgentPreset[] = [
     contextVenueAware: true,
     contextWeatherAware: true,
     wildcardTrait: 'weather_prophet',
+  },
+  {
+    id: 'volatility-breakout-trader',
+    name: 'Volatility Breakout Trader',
+    description: 'Detects statistical outliers in odds movements using z-score analysis - pure quantitative approach',
+    marketFocus: '1x2',
+    decisionStyle: 'volatility_breakout',
+    aggressionType: 'instant',
+    confirmationTolerance: 'aggressive',
+    phaseWeighting: 'full_match',
+    sideBias: 'none',
+    positionSizing: 'confidence_weighted',
+    reactionLatencyMs: 1000,
+    contextVenueAware: false,
+    contextWeatherAware: false,
+    wildcardTrait: 'none',
+    volatilityWindow: 6,
+    breakoutZscore: 1.5,
   },
 ]

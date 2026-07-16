@@ -56,7 +56,7 @@ const FULLTIME_MINUTE = 90;
 // ---------------------------------------------------------------------------
 const FACTORS = {
   market_focus: ['1x2', 'asian_handicap', 'over_under', 'multi_market'],
-  decision_style: ['anticipatory', 'confirmatory', 'balanced'],
+  decision_style: ['anticipatory', 'confirmatory', 'balanced', 'volatility_breakout'],
   confirmation_tolerance: ['aggressive', 'conservative', 'adaptive'],
   score_state_mode: ['favor_chasing', 'favor_leading', 'momentum_only'],
   side_bias: ['home', 'away', 'favorite', 'underdog', 'none'],
@@ -178,7 +178,7 @@ function generateAggressiveConfig() {
   // Rotate through the decision styles that actually respond to odds ticks
   // (anticipatory fires on buildup events, confirmatory on confirmed events,
   // balanced requires both to agree).
-  const DECISION_STYLES = ['anticipatory', 'confirmatory', 'balanced'];
+  const DECISION_STYLES = ['anticipatory', 'confirmatory', 'balanced', 'volatility_breakout'];
   const decisionStyle = randomChoice(DECISION_STYLES);
 
   // Every factor below is randomized (weighted, not hardcoded) so agents stay

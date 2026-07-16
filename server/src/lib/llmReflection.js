@@ -19,7 +19,7 @@ const groq = new Groq({
 // Zod schema for LLM output validation
 const StrategyConfigSchema = z.object({
   market_focus: z.enum(['1x2', 'asian_handicap', 'over_under', 'multi_market']),
-  decision_style: z.enum(['anticipatory', 'confirmatory', 'balanced']),
+  decision_style: z.enum(['anticipatory', 'confirmatory', 'balanced', 'volatility_breakout']),
   confirmation_tolerance: z.enum(['aggressive', 'conservative', 'adaptive']),
   score_state_mode: z.enum(['favor_chasing', 'favor_leading', 'momentum_only']),
   side_bias: z.enum(['home', 'away', 'favorite', 'underdog', 'none']),

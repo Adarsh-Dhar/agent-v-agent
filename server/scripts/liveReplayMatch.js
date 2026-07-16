@@ -335,7 +335,7 @@ if (!TRADING_MODE) {
 function randomChoice(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 function randomInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
 function generateAggressiveConfig() {
-  const decisionStyle = randomChoice(['anticipatory', 'confirmatory', 'balanced']);
+  const decisionStyle = randomChoice(['anticipatory', 'confirmatory', 'balanced', 'volatility_breakout']);
   const sizing = randomChoice(['confidence_weighted', 'percent_of_budget', 'fixed']);
   const exit = randomChoice(['signal_reversal', 'stop-loss', 'time_based']);
   return {
