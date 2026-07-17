@@ -205,9 +205,37 @@ export default function MatchDetailPage({ params }: { params: Promise<{ code: st
         throw new Error(data.error || 'Failed to start match')
       }
 
-      // Update local state immediately for the player who clicked the
-      // button; every other player's poll will pick up match.status shortly.
       setMatch(data.match)
+
+      const playersWithAgents = players.filter(p => p.agent_id)
+      if (playersWithAgents.length === 0) return
+
+      const results = await Promise.allSettled(
+        playersWithAgents.map(async (player) => {
+          console.log(`[v0] Starting run for ${player.player_name} agent ${player.agent_id}`, {
+            match_id: data.match.id,
+            budget_cap: (player.purse ?? 1000) / 1000,
+          })
+          const runResponse = await fetch(`/api/agents/${player.agent_id}/run`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              match_id: data.match.id,
+              budget_cap: (player.purse ?? 1000) / 1000,
+            }),
+          })
+          const runData = await runResponse.json()
+          console.log(`[v0] Run response for ${player.player_name}`, runData)
+          if (!runResponse.ok) throw new Error(runData.error || 'Failed to start run')
+          return { player: player.player_name, runData }
+        })
+      )
+
+      const failures = results.filter(r => r.status === 'rejected') as PromiseRejectedResult[]
+      if (failures.length > 0) {
+        const names = failures.map((f, i) => playersWithAgents[i]?.player_name || `Player ${i + 1}`)
+        alert(`Failed to start agent runs for: ${names.join(', ')}\n\n${failures[0].reason}`)
+      }
     } catch (err) {
       console.error('[v0] Error starting match:', err)
       alert(err instanceof Error ? err.message : 'Failed to start match')

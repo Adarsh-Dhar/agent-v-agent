@@ -6,13 +6,13 @@ resolution = true
 skip-lint = false
 
 [programs.devnet]
-prediction_pot = "7qQaQpaS5oiSYSgq9o5LzJ1EPBMLdbGzrhBMertmpDeU"
+prediction_pot = "DfYv5cMAvhLzLvUy6kYYQgyXewtjCyySZ1LBK8JQ9gwH"
 
 [programs.localnet]
-prediction_pot = "4K7oYpUygMduYeRAhhcrbe6sDKkrp6YVfTJAHggXjwkz"
+prediction_pot = "DfYv5cMAvhLzLvUy6kYYQgyXewtjCyySZ1LBK8JQ9gwH"
 
 [provider]
-cluster = "devnet"
+cluster = "localnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]

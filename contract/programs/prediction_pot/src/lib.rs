@@ -2,28 +2,26 @@ use anchor_lang::prelude::*;
 use anchor_lang::system_program;
 
 // This is overwritten by `anchor keys sync` — see step 3 in the README.
-declare_id!("4K7oYpUygMduYeRAhhcrbe6sDKkrp6YVfTJAHggXjwkz");
+declare_id!("DfYv5cMAvhLzLvUy6kYYQgyXewtjCyySZ1LBK8JQ9gwH");
 
 #[program]
 pub mod prediction_pot {
     use super::*;
 
-    /// Creates a market for a match. `match_id` should match the TxLINE
-    /// match/fixture id string so you can correlate it with real data.
+    /// Creates a market for a match. `match_id_hash` is a 32-byte SHA256 hash
+    /// of the match_id string to ensure fixed-length PDA seeds.
     /// The market account itself acts as the vault -- it holds every
     /// trader's escrowed stake, plus whatever extra house capital you seed
     /// it with (see README: seeding is just a plain SOL transfer to the
     /// market PDA's address, no instruction needed for that part).
-    pub fn initialize_market(ctx: Context<InitializeMarket>, match_id: String) -> Result<()> {
-        require!(match_id.len() <= MAX_MATCH_ID_LEN, PotError::MatchIdTooLong);
-
+    pub fn initialize_market(ctx: Context<InitializeMarket>, match_id_hash: [u8; 32]) -> Result<()> {
         let market = &mut ctx.accounts.market;
         market.authority = ctx.accounts.authority.key();
-        market.match_id = match_id;
+        market.match_id_hash = match_id_hash;
         market.status = MarketStatus::Open;
         market.bump = ctx.bumps.market;
 
-        msg!("market opened for {}", market.match_id);
+        msg!("market opened for hash {:?}", market.match_id_hash);
         Ok(())
     }
 
@@ -145,17 +143,15 @@ pub mod prediction_pot {
     }
 }
 
-const MAX_MATCH_ID_LEN: usize = 32;
-
 #[account]
 pub struct Market {
     pub authority: Pubkey,    // 32 - who can close the market / sign closes
-    pub match_id: String,     // 4 + 32
+    pub match_id_hash: [u8; 32], // 32
     pub status: MarketStatus, // 1
     pub bump: u8,             // 1
 }
 impl Market {
-    pub const MAX_SIZE: usize = 8 + 32 + (4 + MAX_MATCH_ID_LEN) + 1 + 1;
+    pub const MAX_SIZE: usize = 8 + 32 + 32 + 1 + 1;
 }
 
 #[account]
@@ -186,7 +182,7 @@ pub enum PositionStatus {
 }
 
 #[derive(Accounts)]
-#[instruction(match_id: String)]
+#[instruction(match_id_hash: [u8; 32])]
 pub struct InitializeMarket<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
@@ -195,7 +191,7 @@ pub struct InitializeMarket<'info> {
         init,
         payer = authority,
         space = Market::MAX_SIZE,
-        seeds = [b"market", match_id.as_bytes()],
+        seeds = [b"market", &match_id_hash[..8]],
         bump
     )]
     pub market: Account<'info, Market>,
@@ -209,7 +205,7 @@ pub struct OpenPosition<'info> {
     #[account(mut)]
     pub trader: Signer<'info>,
 
-    #[account(mut, seeds = [b"market", market.match_id.as_bytes()], bump = market.bump)]
+    #[account(mut, seeds = [b"market", &market.match_id_hash[..8]], bump = market.bump)]
     pub market: Account<'info, Market>,
 
     #[account(
@@ -231,7 +227,7 @@ pub struct ClosePosition<'info> {
 
     #[account(
         mut,
-        seeds = [b"market", market.match_id.as_bytes()],
+        seeds = [b"market", &market.match_id_hash[..8]],
         bump = market.bump,
         has_one = authority
     )]
@@ -259,7 +255,7 @@ pub struct AuthorityOnly<'info> {
 
     #[account(
         mut,
-        seeds = [b"market", market.match_id.as_bytes()],
+        seeds = [b"market", &market.match_id_hash[..8]],
         bump = market.bump,
         has_one = authority
     )]

@@ -26,6 +26,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { fileURLToPath } from 'url';
+import crypto from 'crypto';
 import * as anchor from '@coral-xyz/anchor';
 import BN from 'bn.js';
 import {
@@ -85,8 +86,10 @@ function programFor(signerKeypair) {
 const authorityProgram = programFor(authorityKeypair);
 
 export function marketPda(matchId) {
+  // Hash match_id to fixed 32 bytes, then use first 8 bytes for PDA seed
+  const matchIdHash = crypto.createHash('sha256').update(matchId).digest();
   return PublicKey.findProgramAddressSync(
-    [Buffer.from('market'), Buffer.from(matchId)],
+    [Buffer.from('market'), matchIdHash.slice(0, 8)],
     PROGRAM_ID
   )[0];
 }
@@ -134,8 +137,10 @@ export async function ensureMarket(matchId) {
   const existing = await connection.getAccountInfo(market);
   if (existing) return market;
 
+  const matchIdHash = crypto.createHash('sha256').update(matchId).digest();
+  
   await authorityProgram.methods
-    .initializeMarket(matchId)
+    .initializeMarket(Array.from(matchIdHash))
     .accounts({
       authority: authorityKeypair.publicKey,
       market,

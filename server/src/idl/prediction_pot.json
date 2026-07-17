@@ -1,5 +1,5 @@
 {
-  "address": "7qQaQpaS5oiSYSgq9o5LzJ1EPBMLdbGzrhBMertmpDeU",
+  "address": "DfYv5cMAvhLzLvUy6kYYQgyXewtjCyySZ1LBK8JQ9gwH",
   "metadata": {
     "name": "prediction_pot",
     "version": "0.1.0",
@@ -34,27 +34,7 @@
         },
         {
           "name": "market",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  109,
-                  97,
-                  114,
-                  107,
-                  101,
-                  116
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "market.match_id",
-                "account": "Market"
-              }
-            ]
-          }
+          "writable": true
         }
       ],
       "args": []
@@ -100,26 +80,6 @@
         {
           "name": "market",
           "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  109,
-                  97,
-                  114,
-                  107,
-                  101,
-                  116
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "market.match_id",
-                "account": "Market"
-              }
-            ]
-          },
           "relations": [
             "position"
           ]
@@ -183,8 +143,8 @@
     {
       "name": "initialize_market",
       "docs": [
-        "Creates a market for a match. `match_id` should match the TxLINE",
-        "match/fixture id string so you can correlate it with real data.",
+        "Creates a market for a match. `match_id_hash` is a 32-byte SHA256 hash",
+        "of the match_id string to ensure fixed-length PDA seeds.",
         "The market account itself acts as the vault -- it holds every",
         "trader's escrowed stake, plus whatever extra house capital you seed",
         "it with (see README: seeding is just a plain SOL transfer to the",
@@ -208,26 +168,7 @@
         },
         {
           "name": "market",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  109,
-                  97,
-                  114,
-                  107,
-                  101,
-                  116
-                ]
-              },
-              {
-                "kind": "arg",
-                "path": "match_id"
-              }
-            ]
-          }
+          "writable": true
         },
         {
           "name": "system_program",
@@ -236,8 +177,13 @@
       ],
       "args": [
         {
-          "name": "match_id",
-          "type": "string"
+          "name": "match_id_hash",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
         }
       ]
     },
@@ -275,27 +221,7 @@
         },
         {
           "name": "market",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  109,
-                  97,
-                  114,
-                  107,
-                  101,
-                  116
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "market.match_id",
-                "account": "Market"
-              }
-            ]
-          }
+          "writable": true
         },
         {
           "name": "position",
@@ -431,8 +357,13 @@
             "type": "pubkey"
           },
           {
-            "name": "match_id",
-            "type": "string"
+            "name": "match_id_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
           },
           {
             "name": "status",
