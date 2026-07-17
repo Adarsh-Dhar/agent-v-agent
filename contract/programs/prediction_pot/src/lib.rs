@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use anchor_lang::system_program::{self, Transfer};
+use anchor_lang::system_program;
 
 // This is overwritten by `anchor keys sync` — see step 3 in the README.
 declare_id!("7qQaQpaS5oiSYSgq9o5LzJ1EPBMLdbGzrhBMertmpDeU");
@@ -8,127 +8,139 @@ declare_id!("7qQaQpaS5oiSYSgq9o5LzJ1EPBMLdbGzrhBMertmpDeU");
 pub mod prediction_pot {
     use super::*;
 
-    /// Creates a new market for a match. `match_id` should match the TxLINE
-    /// match/fixture id string so you can correlate a pot with real data.
+    /// Creates a market for a match. `match_id` should match the TxLINE
+    /// match/fixture id string so you can correlate it with real data.
+    /// The market account itself acts as the vault -- it holds every
+    /// trader's escrowed stake, plus whatever extra house capital you seed
+    /// it with (see README: seeding is just a plain SOL transfer to the
+    /// market PDA's address, no instruction needed for that part).
     pub fn initialize_market(ctx: Context<InitializeMarket>, match_id: String) -> Result<()> {
         require!(match_id.len() <= MAX_MATCH_ID_LEN, PotError::MatchIdTooLong);
 
         let market = &mut ctx.accounts.market;
         market.authority = ctx.accounts.authority.key();
         market.match_id = match_id;
-        market.pool_a = 0;
-        market.pool_b = 0;
         market.status = MarketStatus::Open;
-        market.winning_side = None;
         market.bump = ctx.bumps.market;
 
         msg!("market opened for {}", market.match_id);
         Ok(())
     }
 
-    /// Stakes `amount` lamports on `side` (0 = side A / home, 1 = side B / away).
-    /// One bet per (market, better) — this keeps the account model and the
-    /// payout math simple. Funds move straight into the market PDA itself,
-    /// which acts as the vault since it's owned by this program.
-    pub fn place_bet(ctx: Context<PlaceBet>, side: u8, amount: u64) -> Result<()> {
+    /// Opens a new position: escrows `stake` lamports from the trader into
+    /// the market vault at the given entry price, recorded as basis points
+    /// (odds * 10_000, e.g. 2.774 -> 27740) to keep everything integer math
+    /// on-chain. `side` is 0 = buy, 1 = sell -- this mirrors the
+    /// buy/sell semantics in the off-chain strategy engine directly, not
+    /// the old home/away pari-mutuel side.
+    ///
+    /// `trade_id` must be a value this trader hasn't used before in this
+    /// market. The client (the agent backend) owns incrementing it --
+    /// Anchor's `init` constraint rejects a reused id outright since the
+    /// PDA would already exist, so a collision fails safely rather than
+    /// silently overwriting a prior trade.
+    pub fn open_position(
+        ctx: Context<OpenPosition>,
+        trade_id: u64,
+        side: u8,
+        stake: u64,
+        entry_odds_bps: u32,
+    ) -> Result<()> {
         require!(side == 0 || side == 1, PotError::InvalidSide);
-        require!(amount > 0, PotError::ZeroAmount);
-
-        let market = &mut ctx.accounts.market;
-        require!(market.status == MarketStatus::Open, PotError::MarketNotOpen);
+        require!(stake > 0, PotError::ZeroAmount);
+        require!(entry_odds_bps > 0, PotError::InvalidOdds);
+        require!(ctx.accounts.market.status == MarketStatus::Open, PotError::MarketNotOpen);
 
         system_program::transfer(
             CpiContext::new(
                 ctx.accounts.system_program.key(),
-                Transfer {
-                    from: ctx.accounts.better.to_account_info(),
-                    to: market.to_account_info(),
+                system_program::Transfer {
+                    from: ctx.accounts.trader.to_account_info(),
+                    to: ctx.accounts.market.to_account_info(),
                 },
             ),
-            amount,
+            stake,
         )?;
 
-        if side == 0 {
-            market.pool_a = market.pool_a.checked_add(amount).ok_or(PotError::MathOverflow)?;
-        } else {
-            market.pool_b = market.pool_b.checked_add(amount).ok_or(PotError::MathOverflow)?;
-        }
-
         let position = &mut ctx.accounts.position;
-        position.market = market.key();
-        position.better = ctx.accounts.better.key();
+        position.market = ctx.accounts.market.key();
+        position.trader = ctx.accounts.trader.key();
+        position.trade_id = trade_id;
         position.side = side;
-        position.amount = amount;
-        position.claimed = false;
+        position.stake = stake;
+        position.entry_odds_bps = entry_odds_bps;
+        position.status = PositionStatus::Open;
         position.bump = ctx.bumps.position;
 
-        msg!("bet placed: side={} amount={}", side, amount);
+        msg!(
+            "open trade_id={} side={} stake={} entry_odds_bps={}",
+            trade_id, side, stake, entry_odds_bps
+        );
         Ok(())
     }
 
-    /// Locks the market so no further bets can be placed. Optional step —
-    /// you can skip straight to resolve_market if you'd rather stake stay
-    /// open until fulltime.
-    pub fn lock_market(ctx: Context<AuthorityOnly>) -> Result<()> {
-        let market = &mut ctx.accounts.market;
-        require!(market.status == MarketStatus::Open, PotError::MarketNotOpen);
-        market.status = MarketStatus::Locked;
-        Ok(())
-    }
-
-    /// Settles the match outcome. For a hackathon MVP this is called by the
-    /// market authority (your backend, after reading TxLINE's final score).
-    /// A more trustless version would instead read TxLINE's on-chain score
-    /// proof PDA directly inside this instruction.
-    pub fn resolve_market(ctx: Context<AuthorityOnly>, winning_side: u8) -> Result<()> {
-        require!(winning_side == 0 || winning_side == 1, PotError::InvalidSide);
-        let market = &mut ctx.accounts.market;
-        require!(market.status != MarketStatus::Resolved, PotError::AlreadyResolved);
-        market.status = MarketStatus::Resolved;
-        market.winning_side = Some(winning_side);
-        msg!("market resolved: winning_side={}", winning_side);
-        Ok(())
-    }
-
-    /// Pays out a winning position: original stake + a proportional share of
-    /// the losing pool. Losers simply never call this — their stake stays in
-    /// the market account and is distributed to winners.
-    pub fn claim_payout(ctx: Context<ClaimPayout>) -> Result<()> {
-        let market = &ctx.accounts.market;
-        require!(market.status == MarketStatus::Resolved, PotError::MarketNotResolved);
+    /// Settles a position's PnL immediately against the odds at close time
+    /// -- no waiting for match resolution. Must be signed by the market
+    /// authority, which in a solo-dev devnet setup is the same backend
+    /// process that reads TxLINE's live odds. That's a real trust
+    /// assumption (there's no independent on-chain price oracle here yet)
+    /// -- document it as a known limitation rather than something this
+    /// instruction tries to solve.
+    ///
+    /// PnL uses the identical formula as markToMarket() in the JS engine:
+    ///   buy:  stake * (entry - exit) / entry
+    ///   sell: stake * (exit - entry) / entry
+    /// One difference from the off-chain simulator: losses are clamped to
+    /// the escrowed stake. The JS sim can show losses past -100% (a
+    /// stop-loss checked once a synthetic minute can't clip a 5x odds jump
+    /// mid-tick), but on-chain there is no uncollateralized margin to draw
+    /// on, so a trader can never lose more than what they escrowed here.
+    pub fn close_position(ctx: Context<ClosePosition>, _trade_id: u64, exit_odds_bps: u32) -> Result<()> {
+        require!(exit_odds_bps > 0, PotError::InvalidOdds);
 
         let position = &mut ctx.accounts.position;
-        require!(!position.claimed, PotError::AlreadyClaimed);
+        require!(position.status == PositionStatus::Open, PotError::PositionNotOpen);
 
-        let winning_side = market.winning_side.ok_or(PotError::MarketNotResolved)?;
-        require!(position.side == winning_side, PotError::NotAWinner);
+        let stake = position.stake as i128;
+        let entry = position.entry_odds_bps as i128;
+        let exit = exit_odds_bps as i128;
 
-        let (winning_pool, losing_pool) = if winning_side == 0 {
-            (market.pool_a, market.pool_b)
+        let raw_pnl: i128 = if position.side == 0 {
+            // buy: profits when odds fall
+            stake
+                .checked_mul(entry - exit).ok_or(PotError::MathOverflow)?
+                .checked_div(entry).ok_or(PotError::MathOverflow)?
         } else {
-            (market.pool_b, market.pool_a)
+            // sell: profits when odds rise
+            stake
+                .checked_mul(exit - entry).ok_or(PotError::MathOverflow)?
+                .checked_div(entry).ok_or(PotError::MathOverflow)?
         };
-        require!(winning_pool > 0, PotError::MathOverflow);
 
-        // payout = stake + stake * losing_pool / winning_pool, done in u128
-        // to avoid overflow before the division.
-        let stake = position.amount as u128;
-        let bonus = stake
-            .checked_mul(losing_pool as u128)
-            .ok_or(PotError::MathOverflow)?
-            .checked_div(winning_pool as u128)
-            .ok_or(PotError::MathOverflow)?;
-        let payout = stake.checked_add(bonus).ok_or(PotError::MathOverflow)? as u64;
+        let clamped_pnl = raw_pnl.max(-stake); // never lose more than the stake
+        let payout = (stake + clamped_pnl) as u64; // always >= 0 by the clamp above
 
-        position.claimed = true;
+        position.status = PositionStatus::Closed;
 
-        // Direct lamport transfer: legal here because the market PDA is
-        // owned by this program, so this program is allowed to debit it.
-        // Crediting the better's wallet is unrestricted.
-        **market.to_account_info().try_borrow_mut_lamports()? -= payout;
-        **ctx.accounts.better.to_account_info().try_borrow_mut_lamports()? += payout;
+        // The stake is already sitting in the market/vault account from
+        // open_position. Pay `payout` from the vault to the trader -- a
+        // loss just stays in the vault; a win beyond the original stake
+        // draws on the vault's house-seeded capital.
+        **ctx.accounts.market.to_account_info().try_borrow_mut_lamports()? -= payout;
+        **ctx.accounts.trader.to_account_info().try_borrow_mut_lamports()? += payout;
 
-        msg!("paid out {} lamports to {}", payout, ctx.accounts.better.key());
+        msg!(
+            "close trade_id={} exit_odds_bps={} pnl={} payout={}",
+            position.trade_id, exit_odds_bps, clamped_pnl, payout
+        );
+        Ok(())
+    }
+
+    /// Stops the market from accepting new opens (e.g. once the match
+    /// reaches fulltime). Existing open positions can still be closed --
+    /// this only gates open_position, not close_position.
+    pub fn close_market(ctx: Context<AuthorityOnly>) -> Result<()> {
+        ctx.accounts.market.status = MarketStatus::Closed;
         Ok(())
     }
 }
@@ -137,36 +149,40 @@ const MAX_MATCH_ID_LEN: usize = 32;
 
 #[account]
 pub struct Market {
-    pub authority: Pubkey,       // 32 - who can lock/resolve
-    pub match_id: String,        // 4 + 32
-    pub pool_a: u64,             // 8
-    pub pool_b: u64,             // 8
-    pub status: MarketStatus,    // 1
-    pub winning_side: Option<u8>,// 2
-    pub bump: u8,                // 1
+    pub authority: Pubkey,    // 32 - who can close the market / sign closes
+    pub match_id: String,     // 4 + 32
+    pub status: MarketStatus, // 1
+    pub bump: u8,             // 1
 }
 impl Market {
-    pub const MAX_SIZE: usize = 8 + 32 + (4 + MAX_MATCH_ID_LEN) + 8 + 8 + 1 + 2 + 1;
+    pub const MAX_SIZE: usize = 8 + 32 + (4 + MAX_MATCH_ID_LEN) + 1 + 1;
 }
 
 #[account]
 pub struct Position {
-    pub market: Pubkey, // 32
-    pub better: Pubkey, // 32
-    pub side: u8,        // 1
-    pub amount: u64,     // 8
-    pub claimed: bool,   // 1
-    pub bump: u8,         // 1
+    pub market: Pubkey,           // 32
+    pub trader: Pubkey,           // 32
+    pub trade_id: u64,            // 8
+    pub side: u8,                 // 1 - 0 = buy, 1 = sell
+    pub stake: u64,               // 8 - lamports escrowed at open
+    pub entry_odds_bps: u32,      // 4 - odds * 10_000 at open
+    pub status: PositionStatus,   // 1
+    pub bump: u8,                 // 1
 }
 impl Position {
-    pub const MAX_SIZE: usize = 8 + 32 + 32 + 1 + 8 + 1 + 1;
+    pub const MAX_SIZE: usize = 8 + 32 + 32 + 8 + 1 + 8 + 4 + 1 + 1;
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq)]
 pub enum MarketStatus {
     Open,
-    Locked,
-    Resolved,
+    Closed,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq)]
+pub enum PositionStatus {
+    Open,
+    Closed,
 }
 
 #[derive(Accounts)]
@@ -188,24 +204,53 @@ pub struct InitializeMarket<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(side: u8, amount: u64)]
-pub struct PlaceBet<'info> {
+#[instruction(trade_id: u64, side: u8, stake: u64, entry_odds_bps: u32)]
+pub struct OpenPosition<'info> {
     #[account(mut)]
-    pub better: Signer<'info>,
+    pub trader: Signer<'info>,
 
     #[account(mut, seeds = [b"market", market.match_id.as_bytes()], bump = market.bump)]
     pub market: Account<'info, Market>,
 
     #[account(
         init,
-        payer = better,
+        payer = trader,
         space = Position::MAX_SIZE,
-        seeds = [b"position", market.key().as_ref(), better.key().as_ref()],
+        seeds = [b"position", market.key().as_ref(), trader.key().as_ref(), &trade_id.to_le_bytes()],
         bump
     )]
     pub position: Account<'info, Position>,
 
     pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(trade_id: u64, exit_odds_bps: u32)]
+pub struct ClosePosition<'info> {
+    pub authority: Signer<'info>,
+
+    #[account(
+        mut,
+        seeds = [b"market", market.match_id.as_bytes()],
+        bump = market.bump,
+        has_one = authority
+    )]
+    pub market: Account<'info, Market>,
+
+    /// CHECK: lamport-credit destination only. Its correctness is enforced
+    /// by `has_one = trader` on `position` below -- if this account's key
+    /// didn't match position.trader, that constraint fails the instruction.
+    #[account(mut)]
+    pub trader: UncheckedAccount<'info>,
+
+    #[account(
+        mut,
+        seeds = [b"position", market.key().as_ref(), trader.key().as_ref(), &trade_id.to_le_bytes()],
+        bump = position.bump,
+        has_one = trader,
+        has_one = market,
+    )]
+    pub position: Account<'info, Position>,
 }
 
 #[derive(Accounts)]
@@ -221,41 +266,20 @@ pub struct AuthorityOnly<'info> {
     pub market: Account<'info, Market>,
 }
 
-#[derive(Accounts)]
-pub struct ClaimPayout<'info> {
-    #[account(mut)]
-    pub better: Signer<'info>,
-
-    #[account(mut, seeds = [b"market", market.match_id.as_bytes()], bump = market.bump)]
-    pub market: Account<'info, Market>,
-
-    #[account(
-        mut,
-        seeds = [b"position", market.key().as_ref(), better.key().as_ref()],
-        bump = position.bump,
-        has_one = better
-    )]
-    pub position: Account<'info, Position>,
-}
-
 #[error_code]
 pub enum PotError {
     #[msg("match_id is too long (max 32 bytes)")]
     MatchIdTooLong,
-    #[msg("side must be 0 (A) or 1 (B)")]
+    #[msg("side must be 0 (buy) or 1 (sell)")]
     InvalidSide,
-    #[msg("bet amount must be > 0")]
+    #[msg("stake must be > 0")]
     ZeroAmount,
-    #[msg("market is not open for betting")]
+    #[msg("odds must be > 0")]
+    InvalidOdds,
+    #[msg("market is not open for new positions")]
     MarketNotOpen,
-    #[msg("market is not resolved yet")]
-    MarketNotResolved,
-    #[msg("market has already been resolved")]
-    AlreadyResolved,
-    #[msg("this position already claimed its payout")]
-    AlreadyClaimed,
-    #[msg("this position did not back the winning side")]
-    NotAWinner,
+    #[msg("position is not open")]
+    PositionNotOpen,
     #[msg("math overflow")]
     MathOverflow,
 }

@@ -259,9 +259,9 @@ let oddsBucketed = null;
 if (rawOdds.length > 0) {
   const oddsWithMinute = rawOdds.map((entry) => {
     const t = new Date(entry.fetched_at).getTime();
-    const nearest = chronological.reduce((closest, ev) =>
-      !closest || Math.abs((ev.Ts ?? 0) - t) < Math.abs((closest.Ts ?? 0) - t) ? ev : closest, null);
-    const minute = nearest?.Clock?.Seconds != null ? Math.floor(nearest.Clock.Seconds / 60) : 0;
+    const nearest = timeline.reduce((closest, ev) =>
+      !closest || Math.abs((ev.ts ?? 0) - t) < Math.abs((closest.ts ?? 0) - t) ? ev : closest, null);
+    const minute = nearest?.minute ?? 0;
     const price = resolveMarketOdds(entry.data, { market_focus: MARKET_FOCUS });
     return price !== null ? { minute, price } : null;
   }).filter(Boolean);
@@ -289,9 +289,9 @@ let proofsBucketed = null;
 if (rawProofs.length > 0) {
   const proofsWithMinute = rawProofs.map((entry) => {
     const t = new Date(entry.fetched_at).getTime();
-    const nearest = chronological.reduce((closest, ev) =>
-      !closest || Math.abs((ev.Ts ?? 0) - t) < Math.abs((closest.Ts ?? 0) - t) ? ev : closest, null);
-    const minute = nearest?.Clock?.Seconds != null ? Math.floor(nearest.Clock.Seconds / 60) : 0;
+    const nearest = timeline.reduce((closest, ev) =>
+      !closest || Math.abs((ev.ts ?? 0) - t) < Math.abs((closest.ts ?? 0) - t) ? ev : closest, null);
+    const minute = nearest?.minute ?? 0;
     const proofData = entry.data;
     return proofData ? { minute, proofData } : null;
   }).filter(Boolean);
@@ -350,6 +350,9 @@ function generateAggressiveConfig() {
   };
 }
 
+const HALFTIME_MINUTE = 45;
+const FULLTIME_MINUTE = 90;
+
 function markToMarket(entryOdds, currentOdds, side, stake) {
   const change = side === 'buy' ? (entryOdds - currentOdds) / entryOdds : (currentOdds - entryOdds) / entryOdds;
   return stake * change;
@@ -375,6 +378,13 @@ function checkStopLossTakeProfit(agent, currentOdds) {
   if (pnlPct >= takeProfit) return { exit: true, reason: `take_profit:${(pnlPct * 100).toFixed(1)}%` };
   return { exit: false };
 }
+function checkTimeBasedExit(agent, currentMinute) {
+  const crossedHalftime = agent.position.entryMinute < HALFTIME_MINUTE && currentMinute >= HALFTIME_MINUTE;
+  const crossedFulltime = currentMinute >= FULLTIME_MINUTE;
+  if (crossedHalftime) return { exit: true, reason: `time_based:halftime_min_${currentMinute}` };
+  if (crossedFulltime) return { exit: true, reason: `time_based:fulltime_min_${currentMinute}` };
+  return { exit: false };
+}
 function applyExposureCap(agent, stake) {
   if (agent.config.max_exposure_pct == null) return stake;
   return Math.min(stake, agent.balance * (agent.config.max_exposure_pct / 100));
@@ -392,8 +402,12 @@ function tickAgent(agent, history, snapshot, now) {
   if (agent.halted || !TRADING_MODE) return;
   if (agent.position) {
     agent.unrealizedPnl = markToMarket(agent.position.odds, snapshot.odds, agent.position.side, agent.position.stake);
-    if (agent.config.exit_rule === 'stop-loss') {
+    const exitRule = agent.config.exit_rule;
+    if (exitRule === 'stop-loss' || exitRule === 'stop_loss_take_profit') {
       const check = checkStopLossTakeProfit(agent, snapshot.odds);
+      if (check.exit) closePosition(agent, snapshot, check.reason);
+    } else if (exitRule === 'time_based') {
+      const check = checkTimeBasedExit(agent, snapshot.minute);
       if (check.exit) closePosition(agent, snapshot, check.reason);
     }
   }
