@@ -1,0 +1,5 @@
+CREATE TABLE IF NOT EXISTS public.match_clocks (
+  match_id TEXT PRIMARY KEY,
+  started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);

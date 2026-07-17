@@ -9,10 +9,10 @@ skip-lint = false
 prediction_pot = "7qQaQpaS5oiSYSgq9o5LzJ1EPBMLdbGzrhBMertmpDeU"
 
 [programs.localnet]
-prediction_pot = "7qQaQpaS5oiSYSgq9o5LzJ1EPBMLdbGzrhBMertmpDeU"
+prediction_pot = "4K7oYpUygMduYeRAhhcrbe6sDKkrp6YVfTJAHggXjwkz"
 
 [provider]
-cluster = "localnet"
+cluster = "devnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]

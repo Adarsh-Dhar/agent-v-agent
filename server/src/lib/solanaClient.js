@@ -27,6 +27,7 @@ import path from 'path';
 import os from 'os';
 import { fileURLToPath } from 'url';
 import * as anchor from '@coral-xyz/anchor';
+import BN from 'bn.js';
 import {
   Connection,
   Keypair,
@@ -96,7 +97,7 @@ export function positionPda(market, trader, tradeId) {
       Buffer.from('position'),
       market.toBuffer(),
       trader.toBuffer(),
-      new anchor.BN(tradeId).toArrayLike(Buffer, 'le', 8),
+      new BN(tradeId).toArrayLike(Buffer, 'le', 8),
     ],
     PROGRAM_ID
   )[0];
@@ -166,7 +167,7 @@ export async function openPositionOnChain({ traderKeypair, matchId, tradeId, sid
   const program = programFor(traderKeypair);
 
   const signature = await program.methods
-    .openPosition(new anchor.BN(tradeId), side === 'buy' ? 0 : 1, new anchor.BN(solToLamports(stakeSol)), oddsToBps(entryOdds))
+    .openPosition(new BN(tradeId), side === 'buy' ? 0 : 1, new BN(solToLamports(stakeSol)), oddsToBps(entryOdds))
     .accounts({
       trader: traderKeypair.publicKey,
       market,
@@ -188,7 +189,7 @@ export async function closePositionOnChain({ matchId, traderPubkey, tradeId, exi
   const position = positionPda(market, traderPubkey, tradeId);
 
   const signature = await authorityProgram.methods
-    .closePosition(new anchor.BN(tradeId), oddsToBps(exitOdds))
+    .closePosition(new BN(tradeId), oddsToBps(exitOdds))
     .accounts({
       authority: authorityKeypair.publicKey,
       market,
