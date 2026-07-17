@@ -25,7 +25,7 @@ const StrategyConfigSchema = z.object({
   side_bias: z.enum(['home', 'away', 'favorite', 'underdog', 'none']),
   reaction_latency_ms: z.number().min(0).max(30000),
   position_sizing: z.enum(['fixed', 'percent_of_budget', 'confidence_weighted']),
-  fixed_stake: z.number().min(10).max(1000),
+  fixed_stake: z.number().min(0.01).max(10),
   percentage_stake: z.number().min(1).max(100),
   exit_rule: z.enum(['stop_loss_take_profit', 'time_based', 'signal_reversal']),
   stop_loss: z.number().min(1).max(50),
@@ -64,7 +64,7 @@ function buildPrompt(currentConfig, tradeLog, performanceSummary, validationErro
   prompt = prompt.replace('{{SIDE_BIAS}}', currentConfig.side_bias || 'none');
   prompt = prompt.replace('{{REACTION_LATENCY_MS}}', currentConfig.reaction_latency_ms ?? 3000);
   prompt = prompt.replace('{{POSITION_SIZING}}', currentConfig.position_sizing || 'fixed');
-  prompt = prompt.replace('{{FIXED_STAKE}}', currentConfig.fixed_stake || 100);
+  prompt = prompt.replace('{{FIXED_STAKE}}', currentConfig.fixed_stake || 0.05);
   prompt = prompt.replace('{{PERCENTAGE_STAKE}}', currentConfig.percentage_stake || 10);
   prompt = prompt.replace('{{EXIT_RULE}}', currentConfig.exit_rule || 'signal_reversal');
   prompt = prompt.replace('{{STOP_LOSS}}', currentConfig.stop_loss || 5);

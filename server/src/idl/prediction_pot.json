@@ -1,0 +1,525 @@
+{
+  "address": "4K7oYpUygMduYeRAhhcrbe6sDKkrp6YVfTJAHggXjwkz",
+  "metadata": {
+    "name": "prediction_pot",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Simplest possible parimutuel prediction pot on Solana"
+  },
+  "instructions": [
+    {
+      "name": "close_market",
+      "docs": [
+        "Stops the market from accepting new opens (e.g. once the match",
+        "reaches fulltime). Existing open positions can still be closed --",
+        "this only gates open_position, not close_position."
+      ],
+      "discriminator": [
+        88,
+        154,
+        248,
+        186,
+        48,
+        14,
+        123,
+        244
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "market"
+          ]
+        },
+        {
+          "name": "market",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.match_id",
+                "account": "Market"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "close_position",
+      "docs": [
+        "Settles a position's PnL immediately against the odds at close time",
+        "-- no waiting for match resolution. Must be signed by the market",
+        "authority, which in a solo-dev devnet setup is the same backend",
+        "process that reads TxLINE's live odds. That's a real trust",
+        "assumption (there's no independent on-chain price oracle here yet)",
+        "-- document it as a known limitation rather than something this",
+        "instruction tries to solve.",
+        "",
+        "PnL uses the identical formula as markToMarket() in the JS engine:",
+        "buy:  stake * (entry - exit) / entry",
+        "sell: stake * (exit - entry) / entry",
+        "One difference from the off-chain simulator: losses are clamped to",
+        "the escrowed stake. The JS sim can show losses past -100% (a",
+        "stop-loss checked once a synthetic minute can't clip a 5x odds jump",
+        "mid-tick), but on-chain there is no uncollateralized margin to draw",
+        "on, so a trader can never lose more than what they escrowed here."
+      ],
+      "discriminator": [
+        123,
+        134,
+        81,
+        0,
+        49,
+        68,
+        98,
+        98
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "market"
+          ]
+        },
+        {
+          "name": "market",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.match_id",
+                "account": "Market"
+              }
+            ]
+          },
+          "relations": [
+            "position"
+          ]
+        },
+        {
+          "name": "trader",
+          "docs": [
+            "by `has_one = trader` on `position` below -- if this account's key",
+            "didn't match position.trader, that constraint fails the instruction."
+          ],
+          "writable": true,
+          "relations": [
+            "position"
+          ]
+        },
+        {
+          "name": "position",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              },
+              {
+                "kind": "account",
+                "path": "trader"
+              },
+              {
+                "kind": "arg",
+                "path": "trade_id"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "_trade_id",
+          "type": "u64"
+        },
+        {
+          "name": "exit_odds_bps",
+          "type": "u32"
+        }
+      ]
+    },
+    {
+      "name": "initialize_market",
+      "docs": [
+        "Creates a market for a match. `match_id` should match the TxLINE",
+        "match/fixture id string so you can correlate it with real data.",
+        "The market account itself acts as the vault -- it holds every",
+        "trader's escrowed stake, plus whatever extra house capital you seed",
+        "it with (see README: seeding is just a plain SOL transfer to the",
+        "market PDA's address, no instruction needed for that part)."
+      ],
+      "discriminator": [
+        35,
+        35,
+        189,
+        193,
+        155,
+        48,
+        170,
+        203
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "market",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "match_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "match_id",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "open_position",
+      "docs": [
+        "Opens a new position: escrows `stake` lamports from the trader into",
+        "the market vault at the given entry price, recorded as basis points",
+        "(odds * 10_000, e.g. 2.774 -> 27740) to keep everything integer math",
+        "on-chain. `side` is 0 = buy, 1 = sell -- this mirrors the",
+        "buy/sell semantics in the off-chain strategy engine directly, not",
+        "the old home/away pari-mutuel side.",
+        "",
+        "`trade_id` must be a value this trader hasn't used before in this",
+        "market. The client (the agent backend) owns incrementing it --",
+        "Anchor's `init` constraint rejects a reused id outright since the",
+        "PDA would already exist, so a collision fails safely rather than",
+        "silently overwriting a prior trade."
+      ],
+      "discriminator": [
+        135,
+        128,
+        47,
+        77,
+        15,
+        152,
+        240,
+        49
+      ],
+      "accounts": [
+        {
+          "name": "trader",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "market",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.match_id",
+                "account": "Market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "position",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              },
+              {
+                "kind": "account",
+                "path": "trader"
+              },
+              {
+                "kind": "arg",
+                "path": "trade_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "trade_id",
+          "type": "u64"
+        },
+        {
+          "name": "side",
+          "type": "u8"
+        },
+        {
+          "name": "stake",
+          "type": "u64"
+        },
+        {
+          "name": "entry_odds_bps",
+          "type": "u32"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Market",
+      "discriminator": [
+        219,
+        190,
+        213,
+        55,
+        0,
+        227,
+        198,
+        154
+      ]
+    },
+    {
+      "name": "Position",
+      "discriminator": [
+        170,
+        188,
+        143,
+        228,
+        122,
+        64,
+        247,
+        208
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "MatchIdTooLong",
+      "msg": "match_id is too long (max 32 bytes)"
+    },
+    {
+      "code": 6001,
+      "name": "InvalidSide",
+      "msg": "side must be 0 (buy) or 1 (sell)"
+    },
+    {
+      "code": 6002,
+      "name": "ZeroAmount",
+      "msg": "stake must be > 0"
+    },
+    {
+      "code": 6003,
+      "name": "InvalidOdds",
+      "msg": "odds must be > 0"
+    },
+    {
+      "code": 6004,
+      "name": "MarketNotOpen",
+      "msg": "market is not open for new positions"
+    },
+    {
+      "code": 6005,
+      "name": "PositionNotOpen",
+      "msg": "position is not open"
+    },
+    {
+      "code": 6006,
+      "name": "MathOverflow",
+      "msg": "math overflow"
+    }
+  ],
+  "types": [
+    {
+      "name": "Market",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "match_id",
+            "type": "string"
+          },
+          {
+            "name": "status",
+            "type": {
+              "defined": {
+                "name": "MarketStatus"
+              }
+            }
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MarketStatus",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Open"
+          },
+          {
+            "name": "Closed"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Position",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "market",
+            "type": "pubkey"
+          },
+          {
+            "name": "trader",
+            "type": "pubkey"
+          },
+          {
+            "name": "trade_id",
+            "type": "u64"
+          },
+          {
+            "name": "side",
+            "type": "u8"
+          },
+          {
+            "name": "stake",
+            "type": "u64"
+          },
+          {
+            "name": "entry_odds_bps",
+            "type": "u32"
+          },
+          {
+            "name": "status",
+            "type": {
+              "defined": {
+                "name": "PositionStatus"
+              }
+            }
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PositionStatus",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Open"
+          },
+          {
+            "name": "Closed"
+          }
+        ]
+      }
+    }
+  ]
+}

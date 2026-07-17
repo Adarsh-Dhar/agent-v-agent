@@ -94,7 +94,7 @@ export function computeStake(agent, balance, confidence) {
   const sizing = agent.position_sizing || 'fixed';
   switch (sizing) {
     case 'fixed':
-      return Math.min(agent.fixed_stake ?? 100, balance);
+      return Math.min(agent.fixed_stake ?? 0.05, balance);
     case 'percent_of_budget':
     case 'percentage': {
       const pct = (agent.percentage_stake ?? 10) / 100; // Convert from percentage to decimal
@@ -110,7 +110,7 @@ export function computeStake(agent, balance, confidence) {
       // computeStake stays a pure function, so the streak is passed as a
       // 3rd-ish input via agent.__martingaleStreak rather than closed-over
       // module state, to keep this file side-effect free.
-      const base = agent.fixed_stake ?? 100;
+      const base = agent.fixed_stake ?? 0.05;
       const streak = agent.__martingaleStreak ?? 0;
       return Math.min(base * Math.pow(2, streak), balance);
     }

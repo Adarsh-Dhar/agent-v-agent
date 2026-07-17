@@ -8,6 +8,12 @@ import { fetchOddsSnapshot } from './lib/txline.js';
 import { evaluateSignal, computeStake } from './lib/strategyEngine.js';
 import { reflectOnStrategy, shouldTriggerReflection } from './lib/llmReflection.js';
 import { selfAdjust } from './lib/selfAdjust.js';
+import {
+  keypairFromSecretArray,
+  openPositionOnChain,
+  closePositionOnChain,
+  getWalletBalanceSol,
+} from './lib/solanaClient.js';
 
 const runId = process.argv[2];
 if (!runId) {
@@ -28,6 +34,8 @@ let peakBalance = null; // highest balance seen so far, used by the max-drawdown
 let lastTradeResult = null; // 'win' | 'loss' | null — used by revenge_trader / martingale
 let martingaleStreak = 0; // consecutive losses, used by risk_profile = 'martingale'
 let fixtureDetails = null; // loaded once at startup for Context Awareness
+let traderKeypair = null; // this run's on-chain wallet, loaded from agent.wallet_secret_key
+let nextTradeId = 0; // increments per open_position call; PDA nonce for this trader+market
 
 function log(...args) {
   console.log(`[run ${runId}]`, ...args);
@@ -73,12 +81,33 @@ function markToMarket(entryOdds, currentOdds, side, stake) {
   return stake * change;
 }
 
-// Closes whatever position is currently open, realizes PnL into balance,
-// records the trade, and clears the module-level `position` variable.
+// Closes whatever position is currently open. The actual PnL calculation
+// and fund movement (vault -> trader) now happens on-chain in
+// close_position -- this just submits the exit odds, then reads the
+// trader wallet's real post-close balance back rather than computing a
+// number in JS. `markToMarket` is still used elsewhere purely for
+// *decisions* (stop-loss/take-profit thresholds, unrealized-PnL display);
+// it no longer has any say over what balance actually gets persisted.
 // Shared by all three exit rules (signal-reversal, stop-loss/take-profit, time-based).
 async function closePosition(agent, snapshot, reason) {
-  const realized = markToMarket(position.odds, snapshot.odds, position.side, position.stake);
-  const newBalance = agent.balance + realized;
+  const balanceBefore = agent.balance;
+  const { tradeId, side, stake } = position;
+
+  let signature;
+  try {
+    ({ signature } = await closePositionOnChain({
+      matchId: agent.match_id,
+      traderPubkey: traderKeypair.publicKey,
+      tradeId,
+      exitOdds: snapshot.odds,
+    }));
+  } catch (err) {
+    log(`ERROR: close_position on-chain call failed, leaving position open: ${err.message}`);
+    return; // don't clear `position` or touch balance -- nothing actually closed
+  }
+
+  const newBalance = await getWalletBalanceSol(traderKeypair.publicKey);
+  const realized = newBalance - balanceBefore;
   const newRealizedTotal = (agent.realized_pnl ?? 0) + realized;
 
   // Track the last close's outcome for revenge_trader / martingale, both of
@@ -87,9 +116,9 @@ async function closePosition(agent, snapshot, reason) {
   martingaleStreak = realized < 0 ? martingaleStreak + 1 : 0;
 
   log(
-    `CLOSE ${position.side} stake=${position.stake} pnl=${realized.toFixed(2)} -> balance=${newBalance.toFixed(2)} reason=${reason}` 
+    `CLOSE ${side} stake=${stake} pnl=${realized.toFixed(4)} -> balance=${newBalance.toFixed(4)} reason=${reason} tx=${signature}`
   );
-  await recordTrade(agent, `close_${position.side}`, snapshot.odds, position.stake, reason);
+  await recordTrade(agent, `close_${side}`, snapshot.odds, stake, reason);
   await updateRun({
     balance: newBalance,
     realized_pnl: newRealizedTotal,
@@ -452,6 +481,10 @@ async function tick(agent) {
   // Update unrealized PnL if a position is open, and check rule-based exits
   // that must be evaluated every tick regardless of whether a new signal fires.
   if (position) {
+    // Off-chain estimate for the UI only (same formula the contract uses),
+    // so the leaderboard has a live number between ticks without an RPC
+    // call every 5s. The authoritative PnL is whatever close_position pays
+    // out on-chain when the position actually closes.
     const unrealized = markToMarket(position.odds, snapshot.odds, position.side, position.stake);
     await updateRun({ unrealized_pnl: unrealized });
 
@@ -520,15 +553,37 @@ async function tick(agent) {
     stake = applyExposureCap(agent, stake); // L. Risk Ceiling: max exposure cap
     if (stake <= 0 || stake > agent.balance) return;
 
-    position = { side: decision.action, odds: snapshot.odds, stake, entryMinute: snapshot.minute };
+    const tradeId = nextTradeId;
+    let signature;
+    try {
+      ({ signature } = await openPositionOnChain({
+        traderKeypair,
+        matchId: agent.match_id,
+        tradeId,
+        side: decision.action,
+        stakeSol: stake,
+        entryOdds: snapshot.odds,
+      }));
+    } catch (err) {
+      log(`ERROR: open_position on-chain call failed, skipping trade: ${err.message}`);
+      return; // nothing was escrowed, so there's no local state to roll back
+    }
+    nextTradeId += 1;
+
+    position = { side: decision.action, odds: snapshot.odds, stake, entryMinute: snapshot.minute, tradeId };
     lastTradeAt = Date.now();
     signalStreak = { action: null, count: 0 };
     const newTradeCount = (agent.trade_count ?? 0) + 1;
+    // The stake is now sitting in the market vault, so the wallet's real
+    // balance is the source of truth -- read it back instead of subtracting
+    // `stake` from a JS number.
+    const newBalance = await getWalletBalanceSol(traderKeypair.publicKey);
 
-    log(`OPEN ${decision.action} stake=${stake.toFixed(2)} @odds=${snapshot.odds} reason=${decision.reason}`);
+    log(`OPEN ${decision.action} stake=${stake.toFixed(4)} @odds=${snapshot.odds} balance=${newBalance.toFixed(4)} reason=${decision.reason} tx=${signature}`);
     await recordTrade(agent, decision.action, snapshot.odds, stake, decision.reason);
-    await updateRun({ trade_count: newTradeCount, status: 'running' });
+    await updateRun({ trade_count: newTradeCount, status: 'running', balance: newBalance });
     agent.trade_count = newTradeCount;
+    agent.balance = newBalance;
   }
 }
 
@@ -536,6 +591,23 @@ async function main() {
   log('starting up...');
   let agent = await loadState();
   log(`loaded config: decision_style=${agent.decision_style} market_focus=${agent.market_focus} sizing=${agent.position_sizing} match=${agent.match_id} budget=${agent.budget_cap}`);
+
+  if (!agent.wallet_secret_key) {
+    throw new Error(`run ${runId} has no wallet_secret_key -- was it created via POST /agents/:id/run after the Solana integration was added?`);
+  }
+  traderKeypair = keypairFromSecretArray(agent.wallet_secret_key);
+  // Resume trade_id numbering where the last run left off, in case this
+  // process restarted mid-run (trade_count only increments on OPEN, so it
+  // equals the next unused nonce for this trader+market).
+  nextTradeId = agent.trade_count ?? 0;
+
+  // Balance is real chain state now, not whatever the DB row says -- sync
+  // it once at startup so a restart doesn't reintroduce a phantom number.
+  const chainBalance = await getWalletBalanceSol(traderKeypair.publicKey);
+  agent.balance = chainBalance;
+  await updateRun({ balance: chainBalance });
+  log(`trader wallet=${traderKeypair.publicKey.toBase58()} on-chain balance=${chainBalance.toFixed(4)} SOL`);
+
   peakBalance = agent.balance;
 
   await updateRun({ status: 'running', pid: process.pid });

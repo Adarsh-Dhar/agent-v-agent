@@ -136,7 +136,7 @@ function generateRandomConfig() {
   }
 
   if (sizing === 'fixed') {
-    config.fixed_stake = randomInt(50, 200);
+    config.fixed_stake = (Math.random() * 0.09 + 0.01).toFixed(4); // 0.01 to 0.1 SOL
   } else if (sizing === 'percent_of_budget' || sizing === 'percentage' || sizing === 'confidence_weighted') {
     config.percentage_stake = randomInt(5, 20);
   }

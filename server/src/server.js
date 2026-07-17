@@ -6,6 +6,7 @@ import path from 'path';
 
 import { supabase } from './lib/supabaseClient.js';
 import { validateAgentConfig, validateRunConfig } from './lib/validateConfig.js';
+import { createFundedRunWallet, ensureMarket } from './lib/solanaClient.js';
 
 dotenv.config();
 
@@ -98,7 +99,7 @@ app.post('/agents', async (req, res) => {
     context_competition_tier_aware: config?.context_competition_tier_aware ?? false,
     wildcard_trait: config?.wildcard_trait || 'none',
     position_sizing: config?.sizing?.type || 'fixed',
-    fixed_stake: config?.sizing?.fixed_stake || 100,
+    fixed_stake: config?.sizing?.fixed_stake || 0.05,
     percentage_stake: config?.sizing?.percentage || 10,
     confidence_weighted: config?.sizing?.confidence_weighted || false,
     exit_rule: config?.exit?.type || 'stop-loss',
@@ -164,9 +165,28 @@ app.post('/agents/:id/run', async (req, res) => {
     .from('agents').select('id').eq('id', req.params.id).single();
   if (agentErr) return res.status(404).json({ error: 'Agent not found' });
 
+  // Real fund movement starts here: mint a fresh devnet wallet for this run
+  // and fund it with budget_cap SOL, then make sure the on-chain market for
+  // this match exists (and is house-seeded) before the agent starts trading.
+  let wallet;
+  try {
+    wallet = await createFundedRunWallet(budget_cap);
+    await ensureMarket(match_id);
+  } catch (err) {
+    return res.status(502).json({ error: `Solana setup failed: ${err.message}` });
+  }
+
   const { data: run, error } = await supabase
     .from('agent_runs')
-    .insert({ agent_id: agent.id, match_id, budget_cap, balance: budget_cap, status: 'active' })
+    .insert({
+      agent_id: agent.id,
+      match_id,
+      budget_cap,
+      balance: budget_cap,
+      status: 'active',
+      wallet_pubkey: wallet.keypair.publicKey.toBase58(),
+      wallet_secret_key: Array.from(wallet.keypair.secretKey),
+    })
     .select().single();
   if (error) return res.status(500).json({ error: error.message });
 

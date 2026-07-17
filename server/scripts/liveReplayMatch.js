@@ -345,7 +345,7 @@ function generateAggressiveConfig() {
     phase_weighting: 'full_match', reentry_rule: 'immediate_reentry', max_reentries: null,
     reaction_latency_ms: 0, wildcard_trait: 'none',
     max_exposure_pct: randomInt(25, 50), max_drawdown_stop_pct: randomInt(25, 50),
-    percentage_stake: randomInt(12, 25), fixed_stake: randomInt(80, 220),
+    percentage_stake: randomInt(12, 25), fixed_stake: (Math.random() * 0.09 + 0.01).toFixed(4),
     stop_loss: randomInt(3, 10), take_profit: randomInt(10, 25),
   };
 }

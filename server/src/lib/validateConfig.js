@@ -118,8 +118,8 @@ export function validateAgentConfig(body) {
 
   // Validate numeric ranges
   if (body.fixed_stake !== undefined) {
-    if (typeof body.fixed_stake !== 'number' || body.fixed_stake < 10 || body.fixed_stake > 1000) {
-      errors.push('fixed_stake must be a number between 10 and 1000');
+    if (typeof body.fixed_stake !== 'number' || body.fixed_stake < 0.01 || body.fixed_stake > 10) {
+      errors.push('fixed_stake must be a number between 0.01 and 10 (SOL)');
     }
   }
 
