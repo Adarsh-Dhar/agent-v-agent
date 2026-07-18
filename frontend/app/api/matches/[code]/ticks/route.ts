@@ -43,7 +43,7 @@ export async function GET(
       .from('match_ticks')
       .select('minute, odds, score_home, score_away, event, created_at')
       .eq('match_id', matchIdForAgents)
-      .order('minute', { ascending: true })
+      .order('created_at', { ascending: true })
 
     if (ticksError) {
       console.error('[v0] Database error fetching match ticks:', ticksError)

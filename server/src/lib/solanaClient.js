@@ -22,6 +22,8 @@
 // consistent, since this is the exact amount airdropped/transferred into
 // the run's wallet.
 
+import 'dotenv/config';
+
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -36,7 +38,6 @@ import {
   SystemProgram,
   LAMPORTS_PER_SOL,
   Transaction,
-  sendAndConfirmTransaction,
 } from '@solana/web3.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -72,7 +73,48 @@ try {
   );
 }
 
-export const connection = new Connection(RPC_URL, 'confirmed');
+const rawConnection = new Connection(RPC_URL, 'confirmed');
+
+/** Patch confirmTransaction to use polling instead of WebSocket subscriptions. */
+rawConnection.confirmTransaction = async function (signatureOrBlockhash, commitment) {
+  const sig = typeof signatureOrBlockhash === 'string'
+    ? signatureOrBlockhash
+    : signatureOrBlockhash?.signature || signatureOrBlockhash;
+  const start = Date.now();
+  while (Date.now() - start < 60_000) {
+    const status = await rawConnection.getSignatureStatus(sig);
+    if (status?.value?.confirmationStatus === 'confirmed' || status?.value?.confirmationStatus === 'finalized') {
+      if (status.value.err) throw new Error(`Transaction ${sig} failed: ${JSON.stringify(status.value.err)}`);
+      return { value: status.value };
+    }
+    if (status?.value?.err) throw new Error(`Transaction ${sig} failed: ${JSON.stringify(status.value.err)}`);
+    await new Promise(r => setTimeout(r, 500));
+  }
+  throw new Error(`Transaction ${sig} not confirmed after 60s`);
+};
+
+export const connection = rawConnection;
+
+/** Send a signed transaction and confirm via polling (avoids WebSocket hangs). */
+async function sendAndConfirmPolling(connection, tx, signers, opts = {}) {
+  const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+  tx.recentBlockhash = blockhash;
+  tx.feePayer = tx.feePayer || signers[0].publicKey;
+  for (const s of signers) tx.sign(s);
+  const raw = tx.serialize();
+  const sig = await connection.sendRawTransaction(raw, { skipPreflight: true, ...opts });
+  const start = Date.now();
+  while (Date.now() - start < 30_000) {
+    const status = await connection.getSignatureStatus(sig);
+    if (status?.value?.confirmationStatus === 'confirmed' || status?.value?.confirmationStatus === 'finalized') {
+      if (status.value.err) throw new Error(`Transaction failed: ${JSON.stringify(status.value.err)}`);
+      return sig;
+    }
+    if (status?.value?.err) throw new Error(`Transaction failed: ${JSON.stringify(status.value.err)}`);
+    await new Promise(r => setTimeout(r, 500));
+  }
+  throw new Error(`Transaction ${sig} not confirmed after 30s`);
+}
 
 const authorityKeypair = loadKeypairFromFile(
   process.env.MARKET_AUTHORITY_KEYPAIR_PATH || './market-authority-keypair.json'
@@ -128,10 +170,7 @@ export async function createFundedRunWallet(solAmount) {
       lamports: solToLamports(solAmount) + solToLamports(0.01), // pad for tx fees/rent
     })
   );
-  const sig = await sendAndConfirmTransaction(connection, tx, [authorityKeypair], {
-    skipPreflight: true,
-    commitment: 'confirmed',
-  });
+  const sig = await sendAndConfirmPolling(connection, tx, [authorityKeypair]);
   return { keypair: kp, signature: sig };
 }
 
@@ -159,10 +198,7 @@ export async function ensureMarket(matchId) {
       lamports: solToLamports(HOUSE_SEED_SOL),
     })
   );
-  await sendAndConfirmTransaction(connection, seedTx, [authorityKeypair], {
-    skipPreflight: true,
-    commitment: 'confirmed',
-  });
+  await sendAndConfirmPolling(connection, seedTx, [authorityKeypair]);
 
   return market;
 }

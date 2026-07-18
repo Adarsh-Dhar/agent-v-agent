@@ -322,11 +322,10 @@ export async function fetchOddsSnapshot(fixtureId, agent = {}) {
     return fetchReplaySnapshot(fixtureId);
   }
 
-  if (process.env.TXLINE_MOCK_DATASET) {
-    return await mockTick();
-  }
-
   if (!TXLINE_API_ORIGIN || !TXLINE_WALLET_KEYPAIR_PATH || !TXLINE_API_TOKEN) {
+    if (process.env.TXLINE_MOCK_DATASET) {
+      return await mockTick();
+    }
     return { ...(await mockTick()), isMock: true };
   }
 

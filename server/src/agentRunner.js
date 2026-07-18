@@ -74,24 +74,41 @@ async function updateAgentMetrics(agentId, fields) {
 
 // Persist the live odds/score/minute feed so the frontend can show "what's
 // happening in the match right now" independent of whether any agent
-// actually traded on this tick. Multiple agent processes trading the same
-// match_id will all call this on roughly the same tick -- `ignoreDuplicates`
-// makes every write after the first a harmless no-op instead of a conflict
-// error, since all agents are reading the identical shared-epoch snapshot
-// anyway (see txlineReplay.js / matchClock.js).
+// actually traded on this tick. For live matches we encode seconds into
+// the minute field (minute*100+seconds) so every tick gets its own unique
+// row. The frontend decodes this back to the real minute for display.
+// For replay matches we use the real minute directly with upsert dedup.
 async function recordMatchTick(matchId, snapshot) {
-  const { error } = await supabase.from('match_ticks').upsert(
-    {
+  const isReplay = matchId?.startsWith('replay-');
+
+  const storeMinute = isReplay
+    ? snapshot.minute
+    : snapshot.minute * 100 + Math.floor((Date.now() / 1000) % 60);
+
+  if (isReplay) {
+    const { error } = await supabase.from('match_ticks').upsert(
+      {
+        match_id: matchId,
+        minute: storeMinute,
+        odds: snapshot.odds,
+        score_home: snapshot.score?.home ?? null,
+        score_away: snapshot.score?.away ?? null,
+        event: snapshot.event ?? null,
+      },
+      { onConflict: 'match_id,minute', ignoreDuplicates: true }
+    );
+    if (error) log('WARN: failed to record match tick:', error.message);
+  } else {
+    const { error } = await supabase.from('match_ticks').insert({
       match_id: matchId,
-      minute: snapshot.minute,
+      minute: storeMinute,
       odds: snapshot.odds,
       score_home: snapshot.score?.home ?? null,
       score_away: snapshot.score?.away ?? null,
       event: snapshot.event ?? null,
-    },
-    { onConflict: 'match_id,minute', ignoreDuplicates: true }
-  );
-  if (error) log('WARN: failed to record match tick:', error.message);
+    });
+    if (error) log('WARN: failed to record match tick:', error.message);
+  }
 }
 
 async function recordTrade(agent, side, odds, stake, reason, pnl = null, balanceAfter = null, txSignature = null) {

@@ -19,6 +19,8 @@ interface MatchOddsChartProps {
 
 export default function MatchOddsChart({ ticks, homeTeam, awayTeam }: MatchOddsChartProps) {
   const latest = ticks[ticks.length - 1]
+  const decodeMinute = (m: number) => m >= 100 ? Math.floor(m / 100) : m
+  const decodedTicks = ticks.map(t => ({ ...t, minute: decodeMinute(t.minute) }))
 
   return (
     <div className="glass-card p-6 mb-8">
@@ -29,7 +31,7 @@ export default function MatchOddsChart({ ticks, homeTeam, awayTeam }: MatchOddsC
             <span>
               {homeTeam || 'Home'} {latest.score_home ?? 0} - {latest.score_away ?? 0} {awayTeam || 'Away'}
             </span>
-            <span>Minute {latest.minute}'</span>
+            <span>Minute {decodeMinute(latest.minute)}'</span>
             {latest.event && latest.event !== '-' && (
               <span className="text-primary font-medium">{latest.event}</span>
             )}
@@ -43,7 +45,7 @@ export default function MatchOddsChart({ ticks, homeTeam, awayTeam }: MatchOddsC
         </p>
       ) : (
         <ResponsiveContainer width="100%" height={220}>
-          <LineChart data={ticks} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+          <LineChart data={decodedTicks} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#2a2a3e" vertical={false} opacity={0.3} />
             <XAxis dataKey="minute" stroke="#a1a1a1" style={{ fontSize: '12px' }} tickFormatter={(m) => `${m}'`} />
             <YAxis stroke="#a1a1a1" style={{ fontSize: '12px' }} domain={['auto', 'auto']} />

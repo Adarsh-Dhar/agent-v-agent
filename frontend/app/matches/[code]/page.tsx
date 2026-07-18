@@ -138,7 +138,7 @@ export default function MatchLobbyPage({ params }: { params: Promise<{ code: str
     try {
       const updateBody: any = { status: 'active' }
       if (match?.fixture_id) {
-        updateBody.is_replay = true
+        updateBody.is_replay = match.is_replay ?? true
         updateBody.fixture_id = match.fixture_id
       }
       const response = await fetch(`/api/matches/${code}`, {

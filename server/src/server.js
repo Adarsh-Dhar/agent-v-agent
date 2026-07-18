@@ -166,6 +166,20 @@ app.post('/agents/:id/run', async (req, res) => {
     .from('agents').select('id').eq('id', req.params.id).single();
   if (agentErr) return res.status(404).json({ error: 'Agent not found' });
 
+  // Guard: if this agent already has an active run for this match, return it
+  // instead of spawning a duplicate (prevents double-funding on reload/double-click).
+  const { data: existingRun } = await supabase
+    .from('agent_runs')
+    .select('id, status')
+    .eq('agent_id', agent.id)
+    .eq('match_id', match_id)
+    .eq('status', 'active')
+    .maybeSingle();
+
+  if (existingRun) {
+    return res.status(200).json({ run_id: existingRun.id, agent_id: agent.id, status: 'already_running' });
+  }
+
   // Check if this is a replay match (format: replay-{fixture-id})
   const isReplayMatch = match_id?.startsWith('replay-');
   

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import Header from '@/components/header'
@@ -25,6 +25,8 @@ export default function MatchRunPage({ params }: { params: Promise<{ code: strin
   const [stopping, setStopping] = useState(false)
   const [countdown, setCountdown] = useState<number | null>(null)
   const [showCharts, setShowCharts] = useState(false)
+  const wasPendingOnFirstLoad = useRef<boolean | null>(null)
+  const [hasAutoStarted, setHasAutoStarted] = useState(false)
 
   const matchStarted = match?.status === 'active' || match?.status === 'completed'
 
@@ -54,6 +56,11 @@ export default function MatchRunPage({ params }: { params: Promise<{ code: strin
 
       setMatch(matchData.match)
       setPlayers(matchData.players || [])
+
+      // Record the very first status so we know if this was a pending→active transition
+      if (wasPendingOnFirstLoad.current === null) {
+        wasPendingOnFirstLoad.current = matchData.match?.status === 'pending'
+      }
 
       if (matchData.match?.game_id) {
         try {
@@ -151,12 +158,19 @@ export default function MatchRunPage({ params }: { params: Promise<{ code: strin
     )
   }
 
-  // Countdown → showCharts → startAgentRuns
+  // Auto-start: only play countdown + start agent runs on a genuine pending→active
+  // transition. If the page reloads on an already-active match, just resume viewing.
   useEffect(() => {
-    if (matchStarted && countdown === null && !showCharts) {
-      setCountdown(3)
+    if (!initialLoadDone) return
+    if (matchStarted && countdown === null && !showCharts && !hasAutoStarted) {
+      setHasAutoStarted(true)
+      if (wasPendingOnFirstLoad.current) {
+        setCountdown(3)
+      } else {
+        setShowCharts(true)
+      }
     }
-  }, [matchStarted, countdown, showCharts])
+  }, [matchStarted, countdown, showCharts, initialLoadDone, hasAutoStarted])
 
   useEffect(() => {
     if (countdown === null) return

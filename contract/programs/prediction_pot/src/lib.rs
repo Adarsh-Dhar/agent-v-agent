@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 use anchor_lang::system_program;
 
 // This is overwritten by `anchor keys sync` — see step 3 in the README.
-declare_id!("DfYv5cMAvhLzLvUy6kYYQgyXewtjCyySZ1LBK8JQ9gwH");
+declare_id!("CcqJD7Ksq9SRk1xCDUuZjUevVfwA4tPGw523gLxuRkbH");
 
 #[program]
 pub mod prediction_pot {

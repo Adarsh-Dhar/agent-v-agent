@@ -50,15 +50,17 @@ function buildLines(ticks: Tick[], players: PlayerWithTrades[]): LogLine[] {
   const lines: LogLine[] = []
 
   ticks.forEach((t) => {
+    // Live ticks encode sub-minute data as minute*100+seconds; decode for display
+    const displayMinute = t.minute >= 100 ? Math.floor(t.minute / 100) : t.minute
     const oddsStr = t.odds != null ? `odds=${Number(t.odds).toFixed(3)} ` : ''
     const isError = t.event?.startsWith('error:')
     lines.push({
-      key: `tick-${t.minute}`,
+      key: `tick-${t.minute}-${t.created_at}`,
       ts: t.created_at,
       tone: isError ? 'close-loss' : 'tick',
       text: isError
-        ? `[${t.minute}'] ⚠ ${t.event}`
-        : `[${t.minute}'] ${oddsStr}score=${t.score_home ?? 0}-${t.score_away ?? 0} event=${t.event || '-'}`,
+        ? `[${displayMinute}'] ⚠ ${t.event}`
+        : `[${displayMinute}'] ${oddsStr}score=${t.score_home ?? 0}-${t.score_away ?? 0} event=${t.event || '-'}`,
     })
   })
 
