@@ -117,6 +117,9 @@ export type Match = {
   initial_purse: number
   status: 'pending' | 'active' | 'completed'
   max_players: number
+  agent_match_id?: string
+  is_replay?: boolean
+  fixture_id?: string | number
   created_at: string
   updated_at: string
 }

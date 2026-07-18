@@ -1,17 +1,15 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import Header from '@/components/header'
 import AgentChart from '@/components/agent-chart'
-import { Copy, Plus, Loader, Users, AlertCircle, Play } from 'lucide-react'
+import { Copy, Plus, Loader, Users, Play } from 'lucide-react'
 import { useAuth } from '@/app/providers'
 import type { Match, MatchPlayer, Game } from '@/lib/supabase'
 
 export default function MatchDetailPage({ params }: { params: Promise<{ code: string }> | { code: string } }) {
   const { user } = useAuth()
-  const searchParams = useSearchParams()
   const [code, setCode] = useState<string>('')
   const [secretCode, setSecretCode] = useState<string>('')
   const [match, setMatch] = useState<Match | null>(null)
@@ -19,6 +17,7 @@ export default function MatchDetailPage({ params }: { params: Promise<{ code: st
   const [players, setPlayers] = useState<MatchPlayer[]>([])
   const [agents, setAgents] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [initialLoadDone, setInitialLoadDone] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [joining, setJoining] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -49,11 +48,13 @@ export default function MatchDetailPage({ params }: { params: Promise<{ code: st
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params])
 
-  const fetchMatchData = useCallback(async () => {
+  const fetchMatchData = useCallback(async (isPoll = false) => {
     if (!code) return
     
     try {
-      setLoading(true)
+      // Only show the full-page loading spinner on the very first load;
+      // subsequent polls should update data in-place without a visual reset.
+      if (!initialLoadDone) setLoading(true)
       
       // Fetch match details
       const matchResponse = await fetch(`/api/matches/${code}`)
@@ -100,8 +101,9 @@ export default function MatchDetailPage({ params }: { params: Promise<{ code: st
       setError(err instanceof Error ? err.message : 'Failed to fetch match')
     } finally {
       setLoading(false)
+      setInitialLoadDone(true)
     }
-  }, [code, user])
+  }, [code, user, initialLoadDone])
 
   useEffect(() => {
     if (code) {
@@ -164,35 +166,6 @@ export default function MatchDetailPage({ params }: { params: Promise<{ code: st
     }
   }, [code, fetchMatchData])
 
-  // Once the DB says the match is active, run a local countdown animation
-  // and then reveal the charts. This runs independently in every browser
-  // tab, so all players see the same countdown-then-charts sequence shortly
-  // after whichever player clicked "Start Match".
-  useEffect(() => {
-    if (matchStarted && countdown === null && !showCharts) {
-      setCountdown(3)
-    }
-  }, [matchStarted, countdown, showCharts])
-
-  useEffect(() => {
-    if (countdown === null) return
-
-    if (countdown <= 0) {
-      const timeout = setTimeout(() => {
-        setShowCharts(true)
-        setCountdown(null)
-        // Start agent runs automatically after countdown
-        startAgentRuns()
-      }, 800)
-      return () => clearTimeout(timeout)
-    }
-
-    const timeout = setTimeout(() => {
-      setCountdown((c) => (c !== null ? c - 1 : c))
-    }, 1000)
-    return () => clearTimeout(timeout)
-  }, [countdown])
-
   const isPlayerInMatch = user && players.some(p => p.player_id === user.id)
 
   const startAgentRuns = async () => {
@@ -232,6 +205,47 @@ export default function MatchDetailPage({ params }: { params: Promise<{ code: st
     }
   }
 
+  // Once the DB says the match is active, run a local countdown animation
+  // and then reveal the charts. This runs independently in every browser
+  // tab, so all players see the same countdown-then-charts sequence shortly
+  // after whichever player clicked "Start Match".
+  useEffect(() => {
+    if (matchStarted && countdown === null && !showCharts) {
+      setCountdown(3)
+    }
+  }, [matchStarted, countdown, showCharts])
+
+  useEffect(() => {
+    if (countdown === null) return
+
+    if (countdown <= 0) {
+      const timeout = setTimeout(() => {
+        setShowCharts(true)
+        setCountdown(null)
+        // Start agent runs automatically after countdown
+        startAgentRuns()
+      }, 800)
+      return () => clearTimeout(timeout)
+    }
+
+    const timeout = setTimeout(() => {
+      setCountdown((c) => (c !== null ? c - 1 : c))
+    }, 1000)
+    return () => clearTimeout(timeout)
+  }, [countdown])
+
+  // Live polling: agent_runs/trades are not covered by the Supabase realtime
+  // subscriptions above (those only watch matches + match_players), so we
+  // poll the API endpoint while the match is running to keep charts and stat
+  // pills in sync with the backend's tick-by-tick updates.
+  useEffect(() => {
+    if (!showCharts || !code) return
+    const interval = setInterval(() => {
+      fetchMatchData(true)
+    }, 3000)
+    return () => clearInterval(interval)
+  }, [showCharts, code, fetchMatchData])
+
   const startMatch = async () => {
     setStarting(true)
     try {
@@ -255,9 +269,6 @@ export default function MatchDetailPage({ params }: { params: Promise<{ code: st
       }
 
       setMatch(data.match)
-      
-      // Start agent runs after match is started
-      await startAgentRuns()
     } catch (err) {
       console.error('[v0] Error starting match:', err)
       alert(err instanceof Error ? err.message : 'Failed to start match')
@@ -445,17 +456,6 @@ export default function MatchDetailPage({ params }: { params: Promise<{ code: st
               Back to Matches
             </Link>
           </div>
-        </main>
-      </div>
-    )
-  }
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-background">
-        <Header />
-        <main className="flex flex-col items-center justify-center py-20 min-h-screen">
-          <Loader className="w-8 h-8 text-primary animate-spin" />
         </main>
       </div>
     )
