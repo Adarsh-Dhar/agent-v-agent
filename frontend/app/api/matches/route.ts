@@ -178,7 +178,10 @@ export async function POST(request: NextRequest) {
     
     // For replay matches, use replay-{fixture_id} as the agent_match_id
     // This is what the agent runner will use to fetch replay data
-    const agentMatchId = is_replay && fixture_id ? `replay-${fixture_id}` : null
+    // For replay matches, use replay-{fixture_id}; for live matches, use the raw fixture_id
+    const agentMatchId = fixture_id
+      ? (is_replay ? `replay-${fixture_id}` : String(fixture_id))
+      : null
 
     // Insert match
     const { data, error } = await supabaseAdmin
@@ -194,7 +197,7 @@ export async function POST(request: NextRequest) {
           status: 'pending',
           max_players,
           is_replay,
-          fixture_id: is_replay ? fixture_id : null,
+          fixture_id: fixture_id || null,
           agent_match_id: agentMatchId,
           home_team: home_team || null,
           away_team: away_team || null,

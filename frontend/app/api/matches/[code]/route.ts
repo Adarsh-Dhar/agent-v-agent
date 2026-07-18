@@ -433,15 +433,17 @@ export async function PATCH(
     // Build update object
     const updateData: any = { status, updated_at: new Date().toISOString() }
     
-    // If replay configuration is provided, update those fields
+    // If fixture configuration is provided, update those fields
     if (is_replay !== undefined) {
       updateData.is_replay = is_replay
     }
     if (fixture_id !== undefined) {
       updateData.fixture_id = fixture_id
-      // If setting fixture_id for a replay match, also set agent_match_id
+      // Set agent_match_id based on whether this is a replay or live fixture
       if (is_replay) {
         updateData.agent_match_id = `replay-${fixture_id}`
+      } else {
+        updateData.agent_match_id = String(fixture_id)
       }
     }
 

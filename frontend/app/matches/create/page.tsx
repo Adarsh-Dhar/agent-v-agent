@@ -14,6 +14,7 @@ type Fixture = {
   sport: string
   start_time: string | null
   timeline_length: number
+  is_replay?: boolean
 }
 
 export default function CreateMatchPage() {
@@ -133,7 +134,7 @@ export default function CreateMatchPage() {
     setError(null)
 
     try {
-      const isReplay = !!selectedFixture
+      const isReplay = !!selectedFixture?.is_replay
       const body: any = {
         title: formData.title.trim(),
         description: formData.description.trim(),
@@ -144,9 +145,9 @@ export default function CreateMatchPage() {
         userId: user?.id,
         creatorName: user?.user_metadata?.name || 'Demo User',
         is_replay: isReplay,
-        fixture_id: isReplay ? String(selectedFixture!.fixture_id) : undefined,
-        home_team: isReplay ? selectedFixture!.home_team : undefined,
-        away_team: isReplay ? selectedFixture!.away_team : undefined,
+        fixture_id: selectedFixture ? String(selectedFixture.fixture_id) : undefined,
+        home_team: selectedFixture?.home_team,
+        away_team: selectedFixture?.away_team,
       }
 
       const response = await fetch('/api/matches', {
@@ -256,13 +257,15 @@ export default function CreateMatchPage() {
                     <option value="">No fixture (sandbox mode)</option>
                     {fixtures.map(f => (
                       <option key={f.fixture_id} value={f.fixture_id}>
-                        {f.home_team} vs {f.away_team} — {f.sport}
+                        {f.home_team} vs {f.away_team} — {f.is_replay ? 'Replay' : '🔴 LIVE'}
                       </option>
                     ))}
                   </select>
                   {selectedFixture && (
                     <p className="text-xs text-muted-foreground">
-                      Agents will replay the {selectedFixture.home_team} vs {selectedFixture.away_team} match ({selectedFixture.timeline_length} ticks).
+                      {selectedFixture.is_replay
+                        ? `Agents will replay the ${selectedFixture.home_team} vs ${selectedFixture.away_team} match (${selectedFixture.timeline_length} ticks).`
+                        : `Live on-chain trading against real TxLine odds for ${selectedFixture.home_team} vs ${selectedFixture.away_team}.`}
                     </p>
                   )}
                 </div>
