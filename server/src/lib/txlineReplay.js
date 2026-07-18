@@ -130,8 +130,9 @@ export async function fetchReplaySnapshot(matchId) {
     eventDesc = `${mainEvent.type}${mainEvent.team ? ` ${mainEvent.team}` : ''}`;
   }
   
-  // Synthesize odds since real odds feed was empty
-  const odds = synthesizeOdds(currentEvent.score, currentEvent.minute);
+  // Use real fixture odds if present; fall back to synthetic only when
+  // the fixture doesn't include an odds field (backwards compat).
+  const odds = currentEvent.odds ?? synthesizeOdds(currentEvent.score, currentEvent.minute);
   
   return {
     match_id: matchId,
