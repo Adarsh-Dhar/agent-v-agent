@@ -59,6 +59,14 @@ async function updateRun(fields) {
   if (error) log('WARN: failed to update run row:', error.message);
 }
 
+async function updateAgentMetrics(agentId, fields) {
+  const { error } = await supabase
+    .from('agents')
+    .update(fields)
+    .eq('id', agentId);
+  if (error) log('WARN: failed to update agent row:', error.message);
+}
+
 async function recordTrade(agent, side, odds, stake, reason) {
   const { error } = await supabase.from('trades').insert({
     agent_id: agent.agent_id,
@@ -120,6 +128,11 @@ async function closePosition(agent, snapshot, reason) {
   );
   await recordTrade(agent, `close_${side}`, snapshot.odds, stake, reason);
   await updateRun({
+    balance: newBalance,
+    realized_pnl: newRealizedTotal,
+    unrealized_pnl: 0,
+  });
+  await updateAgentMetrics(agent.agent_id, {
     balance: newBalance,
     realized_pnl: newRealizedTotal,
     unrealized_pnl: 0,
@@ -582,6 +595,10 @@ async function tick(agent) {
     log(`OPEN ${decision.action} stake=${stake.toFixed(4)} @odds=${snapshot.odds} balance=${newBalance.toFixed(4)} reason=${decision.reason} tx=${signature}`);
     await recordTrade(agent, decision.action, snapshot.odds, stake, decision.reason);
     await updateRun({ trade_count: newTradeCount, status: 'running', balance: newBalance });
+    await updateAgentMetrics(agent.agent_id, {
+      trade_count: newTradeCount,
+      balance: newBalance,
+    });
     agent.trade_count = newTradeCount;
     agent.balance = newBalance;
   }
@@ -606,6 +623,7 @@ async function main() {
   const chainBalance = await getWalletBalanceSol(traderKeypair.publicKey);
   agent.balance = chainBalance;
   await updateRun({ balance: chainBalance });
+  await updateAgentMetrics(agent.agent_id, { balance: chainBalance });
   log(`trader wallet=${traderKeypair.publicKey.toBase58()} on-chain balance=${chainBalance.toFixed(4)} SOL`);
 
   peakBalance = agent.balance;

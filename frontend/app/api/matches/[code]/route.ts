@@ -85,8 +85,31 @@ export async function GET(
       )
     }
 
-    console.log('[v0] Fetched players for match', match.id, ':', players)
-    return NextResponse.json({ match, players: players || [] }, { status: 200 })
+    // Pull live stats + trade history from the real source of truth
+    // (agents / trades tables, written by the Express agent server)
+    // instead of the stale match_players.purse/pnl columns.
+    const enrichedPlayers = await Promise.all(
+      (players || []).map(async (player) => {
+        if (!player.agent_id) return { ...player, agent: null, trades: [] }
+
+        const { data: agent } = await supabaseAdmin
+          .from('agents')
+          .select('balance, realized_pnl, unrealized_pnl, trade_count, status, budget_cap')
+          .eq('id', player.agent_id)
+          .single()
+
+        const { data: trades } = await supabaseAdmin
+          .from('trades')
+          .select('side, odds, stake, reason, created_at')
+          .eq('agent_id', player.agent_id)
+          .order('created_at', { ascending: true })
+
+        return { ...player, agent: agent || null, trades: trades || [] }
+      })
+    )
+
+    console.log('[v0] Fetched players for match', match.id, ':', enrichedPlayers)
+    return NextResponse.json({ match, players: enrichedPlayers }, { status: 200 })
   } catch (error) {
     console.error('[v0] Error in GET /api/matches/[code]:', error)
     return NextResponse.json({ error: 'Internal Server Error: Failed to fetch match' }, { status: 500 })

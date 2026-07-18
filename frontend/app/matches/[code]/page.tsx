@@ -104,7 +104,8 @@ export default function MatchDetailPage({ params }: { params: Promise<{ code: st
   useEffect(() => {
     if (code) {
       fetchMatchData()
-      
+      const interval = setInterval(fetchMatchData, 5000) // refresh every 5s
+
       // Use Supabase Realtime for seamless updates without UI refresh
       let matchSubscription: any = null
       let playersSubscription: any = null
@@ -155,6 +156,7 @@ export default function MatchDetailPage({ params }: { params: Promise<{ code: st
       setupRealtime()
 
       return () => {
+        clearInterval(interval)
         if (matchSubscription) matchSubscription.unsubscribe()
         if (playersSubscription) playersSubscription.unsubscribe()
       }
@@ -706,20 +708,27 @@ export default function MatchDetailPage({ params }: { params: Promise<{ code: st
           <div className="mb-12">
             <h2 className="text-3xl font-bold gradient-text mb-8">Agent Performance</h2>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {players.map((player) => {
-                // Real data: use player's purse and pnl if available
-                const realizedPnL = player.pnl || 0
-                const currentBalance = player.purse || 1000
-                const unrealizedPnL = 0
-                
-                // Generate chart data based on current balance only
-                const chartData = [
-                  {
-                    timestamp: '0:00',
-                    balance: currentBalance,
-                    odds: 1.5,
-                  }
-                ]
+              {players.map((player: any) => {
+                const agent = player.agent
+                const trades = player.trades || []
+
+                const budgetCap = agent?.budget_cap ?? player.initial_purse ?? 1000
+                const currentBalance = agent?.balance ?? player.purse ?? budgetCap
+                const realizedPnL = agent?.realized_pnl ?? 0
+                const unrealizedPnL = agent?.unrealized_pnl ?? 0
+                const tradeCount = agent?.trade_count ?? trades.length
+
+                // Walk forward through each trade so the line actually
+                // moves. trades table has no per-trade running balance,
+                // so this interpolates evenly toward the live balance —
+                // fine for a trend view.
+                const chartData = trades.length > 0
+                  ? trades.map((t: any, i: number) => ({
+                      timestamp: new Date(t.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                      balance: budgetCap + ((currentBalance - budgetCap) * (i + 1)) / trades.length,
+                      odds: t.odds,
+                    }))
+                  : [{ timestamp: '0:00', balance: currentBalance, odds: 1.5 }]
 
                 return (
                   <AgentChart
@@ -729,7 +738,7 @@ export default function MatchDetailPage({ params }: { params: Promise<{ code: st
                     balance={currentBalance}
                     realizedPnL={realizedPnL}
                     unrealizedPnL={unrealizedPnL}
-                    tradeCount={0}
+                    tradeCount={tradeCount}
                     color="#a78bfa"
                     gridColor="#2a2a3e"
                     axisColor="#a1a1a1"
