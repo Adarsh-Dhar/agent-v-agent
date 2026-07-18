@@ -8,6 +8,7 @@ interface AgentChartProps {
   title: string
   data: Array<{ timestamp: string; balance: number; odds: number }>
   balance: number
+  initialBalance: number
   realizedPnL: number
   unrealizedPnL: number
   tradeCount: number
@@ -20,6 +21,7 @@ export default function AgentChart({
   title,
   data,
   balance,
+  initialBalance,
   realizedPnL,
   unrealizedPnL,
   tradeCount,
@@ -27,7 +29,6 @@ export default function AgentChart({
   gridColor = 'var(--border)',
   axisColor = 'var(--muted-foreground)',
 }: AgentChartProps) {
-  const initialBalance = 10000
   const totalPnL = realizedPnL + unrealizedPnL
   const isPositive = totalPnL >= 0
 

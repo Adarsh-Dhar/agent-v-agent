@@ -21,8 +21,8 @@ After running the above SQL, run this to update your specific match:
 UPDATE public.matches 
 SET 
   is_replay = true,
-  fixture_id = '18222446',
-  agent_match_id = 'replay-18222446'
+  fixture_id = '18241006',
+  agent_match_id = 'replay-18241006'
 WHERE code = '7E5VJGNWB3P';
 ```
 
@@ -41,6 +41,6 @@ WHERE code = '7E5VJGNWB3P';
 After running these SQL commands:
 1. Refresh your match page in the browser
 2. Start the match
-3. The agent should now use `match_id: replay-18222446`
-4. It will fetch data from the replay fixture at `/server/src/lib/replays/18222446.json`
+3. The agent should now use `match_id: replay-18241006`
+4. It will fetch data from the replay fixture at `/server/src/lib/replays/18241006.json`
 5. You should see real-time trading activity in the charts

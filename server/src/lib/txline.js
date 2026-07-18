@@ -263,7 +263,7 @@ export function resolveMarketOdds(marketsArray, agent) {
 /**
  * GET /api/scores/snapshot/{fixtureId} does NOT return entries in
  * chronological order. Confirmed against two independent fixtures
- * (18222446 Argentina-Switzerland, 18237038 France-Spain): entries are one-
+ * (18241006 Argentina-Switzerland, 18237038 France-Spain): entries are one-
  * per-distinct-Action-type, sorted ALPHABETICALLY by Action name
  * ("action_amend", "action_discarded", "additional_time", "attack_possession",
  * ... "yellow_card"), not by Ts/time. Taking scores[scores.length-1] or

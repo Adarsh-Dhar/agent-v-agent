@@ -3,6 +3,6 @@
 UPDATE public.matches 
 SET 
   is_replay = true,
-  fixture_id = '18222446',
-  agent_match_id = 'replay-18222446'
+  fixture_id = '18241006',
+  agent_match_id = 'replay-18241006'
 WHERE code = '7E5VJGNWB3P';

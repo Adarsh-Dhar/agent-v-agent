@@ -733,19 +733,20 @@ export default function MatchDetailPage({ params }: { params: Promise<{ code: st
                 const trades = player.trades || []
 
                 const budgetCap = agent?.budget_cap ?? player.initial_purse ?? 1000
-                const currentBalance = agent?.balance ?? player.purse ?? budgetCap
                 const realizedPnL = agent?.realized_pnl ?? 0
                 const unrealizedPnL = agent?.unrealized_pnl ?? 0
+                const currentBalance = budgetCap + realizedPnL + unrealizedPnL
                 const tradeCount = agent?.trade_count ?? trades.length
 
-                // Walk forward through each trade so the line actually
-                // moves. trades table has no per-trade running balance,
-                // so this interpolates evenly toward the live balance —
-                // fine for a trend view.
+                // Use real balance_after from the DB when available;
+                // fall back to linear interpolation for historical rows
+                // that predate the schema migration.
                 const chartData = trades.length > 0
                   ? trades.map((t: any, i: number) => ({
                       timestamp: new Date(t.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                      balance: budgetCap + ((currentBalance - budgetCap) * (i + 1)) / trades.length,
+                      balance: t.balance_after != null
+                        ? t.balance_after
+                        : budgetCap + ((currentBalance - budgetCap) * (i + 1)) / trades.length,
                       odds: t.odds,
                     }))
                   : [{ timestamp: '0:00', balance: currentBalance, odds: 1.5 }]
@@ -758,6 +759,7 @@ export default function MatchDetailPage({ params }: { params: Promise<{ code: st
                     title={player.player_name}
                     data={chartData}
                     balance={currentBalance}
+                    initialBalance={budgetCap}
                     realizedPnL={realizedPnL}
                     unrealizedPnL={unrealizedPnL}
                     tradeCount={tradeCount}

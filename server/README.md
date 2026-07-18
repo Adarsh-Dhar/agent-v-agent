@@ -100,10 +100,10 @@ The system supports replaying historical matches for testing and backtesting. Th
 First, build a replay fixture from raw TxLINE score logs:
 
 ```bash
-node scripts/buildReplayFixture.js --fixture-id 18222446 --log logs/txline-scores-2026-07-12.jsonl --home Argentina --away Switzerland
+node scripts/buildReplayFixture.js --fixture-id 18241006 --log logs/txline-scores-2026-07-12.jsonl --home Argentina --away Switzerland
 ```
 
-This parses the raw JSONL score logs, dedupes/diffs the score deltas, and writes a clean ordered timeline to `src/lib/replays/18222446.json`.
+This parses the raw JSONL score logs, dedupes/diffs the score deltas, and writes a clean ordered timeline to `src/lib/replays/18241006.json`.
 
 ### Running an Agent with Replay Data
 
@@ -113,7 +113,7 @@ To run an agent against replay data, use a replay match ID (format: `replay-{fix
 curl -X POST http://localhost:3000/agents \
   -H "Content-Type: application/json" \
   -d '{
-    "match_id": "replay-18222446",
+    "match_id": "replay-18241006",
     "owner": "alice",
     "budget_cap": 500,
     "config": {

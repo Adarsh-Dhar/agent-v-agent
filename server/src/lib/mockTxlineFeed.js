@@ -13,7 +13,7 @@
 // ============================================================================
 // This module does NOT talk to TxLINE or any real odds provider. It replays
 // a fixed, already-completed match (Argentina 3-1 Switzerland, AET/pens,
-// FixtureId 18222446) as a deterministic keyframe timeline, and synthesizes
+// FixtureId 18241006) as a deterministic keyframe timeline, and synthesizes
 // "odds" from a simple toy model. It exists purely so `agentRunner.js` can be
 // exercised end-to-end locally while you don't have TxLINE credentials wired
 // up yet (see the fallback note in README.md / txline.js).
@@ -170,7 +170,7 @@ export function createMockArgentinaSwitzerlandFeed(options = {}) {
       matchEnded,
       // Explicit flags so nothing downstream can mistake this for a real feed.
       isMock: true,
-      mockSource: 'Argentina vs Switzerland (fixture 18222446) — replayed timeline, synthetic odds',
+      mockSource: 'Argentina vs Switzerland (fixture 18241006) — replayed timeline, synthetic odds',
     };
   };
 }

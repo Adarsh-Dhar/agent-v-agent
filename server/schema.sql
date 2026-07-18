@@ -96,6 +96,12 @@ CREATE INDEX IF NOT EXISTS agent_runs_match_id_idx ON public.agent_runs(match_id
 ALTER TABLE public.trades
   ADD COLUMN IF NOT EXISTS run_id UUID REFERENCES public.agent_runs(id) ON DELETE CASCADE;
 
+-- Add per-trade PnL and equity snapshot so the frontend can render a
+-- real equity curve instead of interpolating between start and end.
+ALTER TABLE public.trades
+  ADD COLUMN IF NOT EXISTS pnl NUMERIC,
+  ADD COLUMN IF NOT EXISTS balance_after NUMERIC;
+
 CREATE INDEX IF NOT EXISTS trades_run_id_idx ON public.trades(run_id);
 
 -- Create match_clocks table: shared, race-safe authoritative "match start"

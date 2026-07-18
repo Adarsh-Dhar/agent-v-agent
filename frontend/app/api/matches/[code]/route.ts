@@ -92,18 +92,22 @@ export async function GET(
       (players || []).map(async (player) => {
         if (!player.agent_id) return { ...player, agent: null, trades: [] }
 
-        // Fetch the active agent_run for this agent in this match
+        // Fetch the active agent_run for this agent in this match.
+        // Use the same match_id that startAgentRuns() wrote with:
+        // replay matches use agent_match_id (e.g. "replay-{fixture_id}"),
+        // while live matches use match.id (the UUID).
+        const matchIdForAgents = match.agent_match_id || match.id
         const { data: agentRun, error: agentRunErr } = await supabaseAdmin
           .from('agent_runs')
           .select('id, balance, realized_pnl, unrealized_pnl, trade_count, status, budget_cap')
           .eq('agent_id', player.agent_id)
-          .eq('match_id', match.id)
+          .eq('match_id', matchIdForAgents)
           .order('created_at', { ascending: false })
           .limit(1)
           .single()
 
         if (agentRunErr && agentRunErr.code !== 'PGRST116') {
-          console.error('[v0] agent_run lookup failed for agent_id=', player.agent_id, 'match_id=', match.id, agentRunErr.message)
+          console.error('[v0] agent_run lookup failed for agent_id=', player.agent_id, 'match_id=', matchIdForAgents, agentRunErr.message)
         }
 
         // If no agent_run exists, fall back to agents table for static config
@@ -121,7 +125,7 @@ export async function GET(
         // Fetch trades using run_id if available, otherwise fall back to agent_id
         const { data: trades, error: tradesErr } = await supabaseAdmin
           .from('trades')
-          .select('side, odds, stake, reason, created_at')
+          .select('side, odds, stake, reason, pnl, balance_after, created_at')
           .eq(agentRun ? 'run_id' : 'agent_id', agentRun ? agentRun.id : player.agent_id)
           .order('created_at', { ascending: true })
 

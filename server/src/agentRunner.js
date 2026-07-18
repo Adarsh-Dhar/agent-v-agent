@@ -67,7 +67,7 @@ async function updateAgentMetrics(agentId, fields) {
   if (error) log('WARN: failed to update agent row:', error.message);
 }
 
-async function recordTrade(agent, side, odds, stake, reason) {
+async function recordTrade(agent, side, odds, stake, reason, pnl = null, balanceAfter = null) {
   const { error } = await supabase.from('trades').insert({
     agent_id: agent.agent_id,
     run_id: runId,
@@ -76,6 +76,8 @@ async function recordTrade(agent, side, odds, stake, reason) {
     odds,
     stake,
     reason,
+    pnl,
+    balance_after: balanceAfter,
   });
   if (error) log('WARN: failed to record trade:', error.message);
 }
@@ -141,7 +143,7 @@ async function closePosition(agent, snapshot, reason) {
   log(
     `CLOSE ${side} stake=${stake} pnl=${realized.toFixed(4)} -> balance=${newBalance.toFixed(4)} reason=${reason} tx=${signature}`
   );
-  await recordTrade(agent, `close_${side}`, snapshot.odds, stake, reason);
+  await recordTrade(agent, `close_${side}`, snapshot.odds, stake, reason, realized, newBalance);
   await updateRun({
     balance: newBalance,
     realized_pnl: newRealizedTotal,
@@ -600,7 +602,7 @@ async function tick(agent) {
       const newBalance = agent.balance - stake;
 
       log(`OPEN ${decision.action} stake=${stake.toFixed(4)} @odds=${snapshot.odds} balance=${newBalance.toFixed(4)} reason=${decision.reason} tx=${signature}`);
-      await recordTrade(agent, decision.action, snapshot.odds, stake, decision.reason);
+      await recordTrade(agent, decision.action, snapshot.odds, stake, decision.reason, null, newBalance);
       await updateRun({ trade_count: newTradeCount, status: 'running', balance: newBalance });
       await updateAgentMetrics(agent.agent_id, {
         trade_count: newTradeCount,
@@ -635,7 +637,7 @@ async function tick(agent) {
       const newBalance = await getWalletBalanceSol(traderKeypair.publicKey);
 
       log(`OPEN ${decision.action} stake=${stake.toFixed(4)} @odds=${snapshot.odds} balance=${newBalance.toFixed(4)} reason=${decision.reason} tx=${signature}`);
-      await recordTrade(agent, decision.action, snapshot.odds, stake, decision.reason);
+      await recordTrade(agent, decision.action, snapshot.odds, stake, decision.reason, null, newBalance);
       await updateRun({ trade_count: newTradeCount, status: 'running', balance: newBalance });
       await updateAgentMetrics(agent.agent_id, {
         trade_count: newTradeCount,

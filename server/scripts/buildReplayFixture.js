@@ -7,7 +7,7 @@
  * Seq order, diffs cumulative goals/cards, and emits a clean event timeline.
  *
  * Usage:
- *   node scripts/buildReplayFixture.js --fixture-id 18222446 --log logs/txline-scores-2026-07-12.jsonl --home Argentina --away Switzerland
+ *   node scripts/buildReplayFixture.js --fixture-id 18241006 --log logs/txline-scores-2026-07-12.jsonl --home Argentina --away Switzerland
  */
 
 import fs from 'fs';
