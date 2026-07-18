@@ -59,7 +59,6 @@ function JoinMatchContent() {
 
       // Navigate to match after successful join
       router.push(`/matches/${code.toUpperCase()}`)
-      router.refresh()
     } catch (err) {
       console.error('[v0] Error joining match:', err)
       setError(err instanceof Error ? err.message : 'Failed to join match')

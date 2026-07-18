@@ -93,7 +93,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const { title, description, max_players = 4, initial_purse = 1000, creator_agent_id, creator_agent_name, userId, creatorName } = body
+    const { title, description, max_players = 4, initial_purse = 1000, creator_agent_id, creator_agent_name, userId, creatorName, is_replay = false, fixture_id } = body
 
     // Validate required fields
     if (!title || typeof title !== 'string' || title.trim().length === 0) {
@@ -175,6 +175,10 @@ export async function POST(request: NextRequest) {
 
     const code = generateMatchCode()
     const secretCode = generateSecretCode()
+    
+    // For replay matches, use replay-{fixture_id} as the agent_match_id
+    // This is what the agent runner will use to fetch replay data
+    const agentMatchId = is_replay && fixture_id ? `replay-${fixture_id}` : null
 
     // Insert match
     const { data, error } = await supabaseAdmin
@@ -189,6 +193,9 @@ export async function POST(request: NextRequest) {
           creator_name: creatorName || 'Demo User',
           status: 'pending',
           max_players,
+          is_replay,
+          fixture_id: is_replay ? fixture_id : null,
+          agent_match_id: agentMatchId,
         },
       ])
       .select()

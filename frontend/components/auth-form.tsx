@@ -53,8 +53,8 @@ export default function AuthForm({ mode }: AuthFormProps) {
         })
       }
 
-      // Force page reload to ensure auth state is picked up
-      window.location.href = '/'
+      // Navigate to home page - auth state will be picked up via event
+      router.push('/')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred')
       setLoading(false)

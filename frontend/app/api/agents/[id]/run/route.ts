@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-const AGENT_SERVER_URL = process.env.AGENT_SERVER_URL || 'http://localhost:5000'
+const AGENT_SERVER_URL = process.env.AGENT_SERVER_URL || 'http://localhost:3000'
 
 export async function POST(
   request: NextRequest,
@@ -14,6 +14,7 @@ export async function POST(
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(5 * 60 * 1000), // 5 minutes — Solana setup can be slow on first run
     })
 
     const data = await upstream.json()

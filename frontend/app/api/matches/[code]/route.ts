@@ -86,25 +86,49 @@ export async function GET(
     }
 
     // Pull live stats + trade history from the real source of truth
-    // (agents / trades tables, written by the Express agent server)
+    // (agent_runs / trades tables, written by the Express agent server)
     // instead of the stale match_players.purse/pnl columns.
     const enrichedPlayers = await Promise.all(
       (players || []).map(async (player) => {
         if (!player.agent_id) return { ...player, agent: null, trades: [] }
 
-        const { data: agent } = await supabaseAdmin
-          .from('agents')
-          .select('balance, realized_pnl, unrealized_pnl, trade_count, status, budget_cap')
-          .eq('id', player.agent_id)
+        // Fetch the active agent_run for this agent in this match
+        const { data: agentRun, error: agentRunErr } = await supabaseAdmin
+          .from('agent_runs')
+          .select('id, balance, realized_pnl, unrealized_pnl, trade_count, status, budget_cap')
+          .eq('agent_id', player.agent_id)
+          .eq('match_id', match.id)
+          .order('created_at', { ascending: false })
+          .limit(1)
           .single()
 
-        const { data: trades } = await supabaseAdmin
+        if (agentRunErr && agentRunErr.code !== 'PGRST116') {
+          console.error('[v0] agent_run lookup failed for agent_id=', player.agent_id, 'match_id=', match.id, agentRunErr.message)
+        }
+
+        // If no agent_run exists, fall back to agents table for static config
+        let agentData = agentRun
+        if (!agentRun) {
+          const { data: agent, error: agentErr } = await supabaseAdmin
+            .from('agents')
+            .select('balance, realized_pnl, unrealized_pnl, trade_count, status, budget_cap')
+            .eq('id', player.agent_id)
+            .single()
+          if (agentErr) console.error('[v0] agent lookup failed for agent_id=', player.agent_id, agentErr.message)
+          agentData = agent
+        }
+
+        // Fetch trades using run_id if available, otherwise fall back to agent_id
+        const { data: trades, error: tradesErr } = await supabaseAdmin
           .from('trades')
           .select('side, odds, stake, reason, created_at')
-          .eq('agent_id', player.agent_id)
+          .eq(agentRun ? 'run_id' : 'agent_id', agentRun ? agentRun.id : player.agent_id)
           .order('created_at', { ascending: true })
 
-        return { ...player, agent: agent || null, trades: trades || [] }
+        if (tradesErr) console.error('[v0] trades lookup failed for agent_id=', player.agent_id, tradesErr.message)
+
+        console.log('[v0] agent_id=', player.agent_id, '-> agent_run=', agentRun, 'trades=', trades?.length ?? 0)
+        return { ...player, agent: agentData || null, trades: trades || [] }
       })
     )
 
@@ -371,10 +395,10 @@ export async function PATCH(
       return NextResponse.json({ error: 'Bad Request: Invalid JSON body' }, { status: 400 })
     }
 
-    const { status } = body
+    const { status, is_replay, fixture_id } = body
     const allowedStatuses = ['pending', 'active', 'completed']
 
-    if (!status || !allowedStatuses.includes(status)) {
+    if (status && !allowedStatuses.includes(status)) {
       return NextResponse.json(
         { error: `Bad Request: status must be one of ${allowedStatuses.join(', ')}` },
         { status: 400 }
@@ -402,9 +426,24 @@ export async function PATCH(
       )
     }
 
+    // Build update object
+    const updateData: any = { status, updated_at: new Date().toISOString() }
+    
+    // If replay configuration is provided, update those fields
+    if (is_replay !== undefined) {
+      updateData.is_replay = is_replay
+    }
+    if (fixture_id !== undefined) {
+      updateData.fixture_id = fixture_id
+      // If setting fixture_id for a replay match, also set agent_match_id
+      if (is_replay) {
+        updateData.agent_match_id = `replay-${fixture_id}`
+      }
+    }
+
     const { data: updatedMatch, error: updateError } = await supabaseAdmin
       .from('matches')
-      .update({ status, updated_at: new Date().toISOString() })
+      .update(updateData)
       .eq('id', match.id)
       .select()
       .single()

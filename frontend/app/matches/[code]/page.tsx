@@ -50,6 +50,8 @@ export default function MatchDetailPage({ params }: { params: Promise<{ code: st
   }, [params])
 
   const fetchMatchData = useCallback(async () => {
+    if (!code) return
+    
     try {
       setLoading(true)
       
@@ -104,7 +106,7 @@ export default function MatchDetailPage({ params }: { params: Promise<{ code: st
   useEffect(() => {
     if (code) {
       fetchMatchData()
-      const interval = setInterval(fetchMatchData, 5000) // refresh every 5s
+      // Removed polling interval - Supabase realtime handles real-time updates
 
       // Use Supabase Realtime for seamless updates without UI refresh
       let matchSubscription: any = null
@@ -156,7 +158,6 @@ export default function MatchDetailPage({ params }: { params: Promise<{ code: st
       setupRealtime()
 
       return () => {
-        clearInterval(interval)
         if (matchSubscription) matchSubscription.unsubscribe()
         if (playersSubscription) playersSubscription.unsubscribe()
       }
@@ -180,6 +181,8 @@ export default function MatchDetailPage({ params }: { params: Promise<{ code: st
       const timeout = setTimeout(() => {
         setShowCharts(true)
         setCountdown(null)
+        // Start agent runs automatically after countdown
+        startAgentRuns()
       }, 800)
       return () => clearTimeout(timeout)
     }
@@ -192,13 +195,57 @@ export default function MatchDetailPage({ params }: { params: Promise<{ code: st
 
   const isPlayerInMatch = user && players.some(p => p.player_id === user.id)
 
+  const startAgentRuns = async () => {
+    if (!match) return
+    
+    const playersWithAgents = players.filter(p => p.agent_id)
+    if (playersWithAgents.length === 0) return
+
+    // Use agent_match_id for replay matches, otherwise use match.id
+    const matchIdForAgents = match.agent_match_id || match.id
+
+    const results = await Promise.allSettled(
+      playersWithAgents.map(async (player) => {
+        console.log(`[v0] Starting run for ${player.player_name} agent ${player.agent_id}`, {
+          match_id: matchIdForAgents,
+          budget_cap: (player.purse ?? 1000) / 1000,
+        })
+        const runResponse = await fetch(`/api/agents/${player.agent_id}/run`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            match_id: matchIdForAgents,
+            budget_cap: (player.purse ?? 1000) / 1000,
+          }),
+        })
+        const runData = await runResponse.json()
+        console.log(`[v0] Run response for ${player.player_name}`, runData)
+        if (!runResponse.ok) throw new Error(runData.error || 'Failed to start run')
+        return { player: player.player_name, runData }
+      })
+    )
+
+    const failures = results.filter(r => r.status === 'rejected') as PromiseRejectedResult[]
+    if (failures.length > 0) {
+      const names = failures.map((f, i) => playersWithAgents[i]?.player_name || `Player ${i + 1}`)
+      console.error(`[v0] Failed to start agent runs for: ${names.join(', ')}`, failures[0].reason)
+    }
+  }
+
   const startMatch = async () => {
     setStarting(true)
     try {
+      // First, update the match to be a replay match if it has the fixture_id
+      const updateBody: any = { status: 'active' }
+      if (match?.fixture_id) {
+        updateBody.is_replay = true
+        updateBody.fixture_id = match.fixture_id
+      }
+      
       const response = await fetch(`/api/matches/${code}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'active' }),
+        body: JSON.stringify(updateBody),
       })
 
       const data = await response.json()
@@ -208,36 +255,9 @@ export default function MatchDetailPage({ params }: { params: Promise<{ code: st
       }
 
       setMatch(data.match)
-
-      const playersWithAgents = players.filter(p => p.agent_id)
-      if (playersWithAgents.length === 0) return
-
-      const results = await Promise.allSettled(
-        playersWithAgents.map(async (player) => {
-          console.log(`[v0] Starting run for ${player.player_name} agent ${player.agent_id}`, {
-            match_id: data.match.id,
-            budget_cap: (player.purse ?? 1000) / 1000,
-          })
-          const runResponse = await fetch(`/api/agents/${player.agent_id}/run`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              match_id: data.match.id,
-              budget_cap: (player.purse ?? 1000) / 1000,
-            }),
-          })
-          const runData = await runResponse.json()
-          console.log(`[v0] Run response for ${player.player_name}`, runData)
-          if (!runResponse.ok) throw new Error(runData.error || 'Failed to start run')
-          return { player: player.player_name, runData }
-        })
-      )
-
-      const failures = results.filter(r => r.status === 'rejected') as PromiseRejectedResult[]
-      if (failures.length > 0) {
-        const names = failures.map((f, i) => playersWithAgents[i]?.player_name || `Player ${i + 1}`)
-        alert(`Failed to start agent runs for: ${names.join(', ')}\n\n${failures[0].reason}`)
-      }
+      
+      // Start agent runs after match is started
+      await startAgentRuns()
     } catch (err) {
       console.error('[v0] Error starting match:', err)
       alert(err instanceof Error ? err.message : 'Failed to start match')
@@ -729,6 +749,8 @@ export default function MatchDetailPage({ params }: { params: Promise<{ code: st
                       odds: t.odds,
                     }))
                   : [{ timestamp: '0:00', balance: currentBalance, odds: 1.5 }]
+
+                console.log('[chart] player=', player.player_name, 'agent_id=', player.agent_id, 'agent=', agent, 'trades=', trades, 'chartData=', chartData)
 
                 return (
                   <AgentChart

@@ -36,6 +36,7 @@ import {
   SystemProgram,
   LAMPORTS_PER_SOL,
   Transaction,
+  sendAndConfirmTransaction,
 } from '@solana/web3.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -127,7 +128,10 @@ export async function createFundedRunWallet(solAmount) {
       lamports: solToLamports(solAmount) + solToLamports(0.01), // pad for tx fees/rent
     })
   );
-  const sig = await authorityProgram.provider.sendAndConfirm(tx, [authorityKeypair]);
+  const sig = await sendAndConfirmTransaction(connection, tx, [authorityKeypair], {
+    skipPreflight: true,
+    commitment: 'confirmed',
+  });
   return { keypair: kp, signature: sig };
 }
 
@@ -146,7 +150,7 @@ export async function ensureMarket(matchId) {
       market,
       systemProgram: SystemProgram.programId,
     })
-    .rpc();
+    .rpc({ skipPreflight: true });
 
   const seedTx = new Transaction().add(
     SystemProgram.transfer({
@@ -155,7 +159,10 @@ export async function ensureMarket(matchId) {
       lamports: solToLamports(HOUSE_SEED_SOL),
     })
   );
-  await authorityProgram.provider.sendAndConfirm(seedTx, [authorityKeypair]);
+  await sendAndConfirmTransaction(connection, seedTx, [authorityKeypair], {
+    skipPreflight: true,
+    commitment: 'confirmed',
+  });
 
   return market;
 }
@@ -179,7 +186,7 @@ export async function openPositionOnChain({ traderKeypair, matchId, tradeId, sid
       position,
       systemProgram: SystemProgram.programId,
     })
-    .rpc();
+    .rpc({ skipPreflight: true });
 
   return { signature, position };
 }
@@ -201,7 +208,7 @@ export async function closePositionOnChain({ matchId, traderPubkey, tradeId, exi
       trader: traderPubkey,
       position,
     })
-    .rpc();
+    .rpc({ skipPreflight: true });
 
   return { signature };
 }
