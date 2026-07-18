@@ -21,7 +21,12 @@ if (!runId) {
   process.exit(1);
 }
 
-const POLL_INTERVAL_MS = 5000;
+// Replay matches now advance one match-minute per real second (see
+// txlineReplay.js TICK_INTERVAL_MS), so poll at the same 1s cadence or most
+// minutes would never be observed. Live (non-replay) matches still just get
+// a snapshot every second, which is harmless -- fetchOddsSnapshot has its
+// own upstream rate limiting/caching for that path.
+const POLL_INTERVAL_MS = 1000;
 const HALFTIME_MINUTE = 45;
 const FULLTIME_MINUTE = 90;
 
@@ -89,7 +94,7 @@ async function recordMatchTick(matchId, snapshot) {
   if (error) log('WARN: failed to record match tick:', error.message);
 }
 
-async function recordTrade(agent, side, odds, stake, reason, pnl = null, balanceAfter = null) {
+async function recordTrade(agent, side, odds, stake, reason, pnl = null, balanceAfter = null, txSignature = null) {
   const { error } = await supabase.from('trades').insert({
     agent_id: agent.agent_id,
     run_id: runId,
@@ -100,6 +105,7 @@ async function recordTrade(agent, side, odds, stake, reason, pnl = null, balance
     reason,
     pnl,
     balance_after: balanceAfter,
+    tx_signature: txSignature,
   });
   if (error) log('WARN: failed to record trade:', error.message);
 }
@@ -165,7 +171,7 @@ async function closePosition(agent, snapshot, reason) {
   log(
     `CLOSE ${side} stake=${stake} pnl=${realized.toFixed(4)} -> balance=${newBalance.toFixed(4)} reason=${reason} tx=${signature}`
   );
-  await recordTrade(agent, `close_${side}`, snapshot.odds, stake, reason, realized, newBalance);
+  await recordTrade(agent, `close_${side}`, snapshot.odds, stake, reason, realized, newBalance, signature);
   await updateRun({
     balance: newBalance,
     realized_pnl: newRealizedTotal,
@@ -659,7 +665,7 @@ async function tick(agent) {
       const newBalance = await getWalletBalanceSol(traderKeypair.publicKey);
 
       log(`OPEN ${decision.action} stake=${stake.toFixed(4)} @odds=${snapshot.odds} balance=${newBalance.toFixed(4)} reason=${decision.reason} tx=${signature}`);
-      await recordTrade(agent, decision.action, snapshot.odds, stake, decision.reason, null, newBalance);
+      await recordTrade(agent, decision.action, snapshot.odds, stake, decision.reason, null, newBalance, signature);
       await updateRun({ trade_count: newTradeCount, status: 'running', balance: newBalance });
       await updateAgentMetrics(agent.agent_id, {
         trade_count: newTradeCount,
@@ -729,6 +735,17 @@ async function main() {
     } catch (err) {
       log('ERROR during tick:', err.message);
       await updateRun({ status: 'error' });
+      // Without this, a bad/missing replay fixture (or any other tick
+      // failure) fails silently from the frontend's point of view -- the
+      // terminal log just sits on "waiting for the first tick" forever
+      // with no indication why. Write a visible error line into the same
+      // feed the frontend already polls.
+      await recordMatchTick(agent.match_id, {
+        minute: history.length ? history[history.length - 1].minute : 0,
+        odds: null,
+        score: null,
+        event: `error:${err.message.slice(0, 200)}`,
+      });
     }
   }, POLL_INTERVAL_MS);
 

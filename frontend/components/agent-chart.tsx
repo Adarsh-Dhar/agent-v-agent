@@ -3,6 +3,7 @@
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { TrendingUp, TrendingDown } from 'lucide-react'
 import StatPill from './stat-pill'
+import TradesDropdown, { type TradeRow } from './trades-dropdown'
 
 interface AgentChartProps {
   title: string
@@ -12,6 +13,7 @@ interface AgentChartProps {
   realizedPnL: number
   unrealizedPnL: number
   tradeCount: number
+  trades?: TradeRow[]
   color: string
   gridColor?: string
   axisColor?: string
@@ -25,6 +27,7 @@ export default function AgentChart({
   realizedPnL,
   unrealizedPnL,
   tradeCount,
+  trades = [],
   color,
   gridColor = 'var(--border)',
   axisColor = 'var(--muted-foreground)',
@@ -45,12 +48,11 @@ export default function AgentChart({
             value={`${realizedPnL >= 0 ? '+' : ''}${realizedPnL}`}
             isPositive={realizedPnL >= 0}
           />
-          <StatPill 
-            label="Unrealized" 
+          <StatPill label="Unrealized" 
             value={`${unrealizedPnL >= 0 ? '+' : ''}${unrealizedPnL}`}
             isPositive={unrealizedPnL >= 0}
           />
-          <StatPill label="Trades" value={tradeCount.toString()} />
+          <TradesDropdown trades={trades} />
         </div>
       </div>
 

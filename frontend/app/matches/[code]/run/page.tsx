@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import Header from '@/components/header'
 import AgentChart from '@/components/agent-chart'
 import MatchOddsChart from '@/components/match-odds-chart'
+import MatchLogTerminal from '@/components/match-log-terminal'
 import { Loader, Play } from 'lucide-react'
 import { useAuth } from '@/app/providers'
 import type { Match, MatchPlayer, Game } from '@/lib/supabase'
@@ -300,6 +301,16 @@ export default function MatchRunPage({ params }: { params: Promise<{ code: strin
           </div>
         )}
 
+        {/* Live Terminal-style Trade Log */}
+        {showCharts && (
+          <MatchLogTerminal
+            ticks={ticks}
+            players={players as any}
+            matchStatus={match.status}
+            title={`Live Match Feed — ${match.agent_match_id || match.code}`}
+          />
+        )}
+
         {/* Live Odds Chart */}
         {showCharts && (
           <MatchOddsChart
@@ -343,6 +354,7 @@ export default function MatchRunPage({ params }: { params: Promise<{ code: strin
                     realizedPnL={realizedPnL}
                     unrealizedPnL={unrealizedPnL}
                     tradeCount={tradeCount}
+                    trades={trades}
                     color="#a78bfa"
                     gridColor="#2a2a3e"
                     axisColor="#a1a1a1"

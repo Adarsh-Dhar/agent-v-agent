@@ -6,8 +6,11 @@ import { getMatchEpoch } from './matchClock.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPLAYS_DIR = path.join(__dirname, 'replays');
 
-// Advance to the next timeline event every 8 seconds of wall-clock time.
-const TICK_INTERVAL_MS = 8000;
+// Advance to the next timeline event every 1 second of wall-clock time, so
+// minute N of the match fires at second N of the replay -- same pacing as
+// scripts/liveReplayMatch.js, just driven by the shared epoch instead of a
+// local setInterval so every agent process stays in lockstep.
+const TICK_INTERVAL_MS = 1000;
 
 // In-memory cache per match: just the loaded fixture + a "finished" latch.
 // Notably, this NO LONGER holds a per-process currentIndex/lastTickTime --
@@ -39,7 +42,13 @@ function extractFixtureId(matchId) {
 function loadFixture(fixtureId) {
   const fixturePath = path.join(REPLAYS_DIR, `${fixtureId}.json`);
   if (!fs.existsSync(fixturePath)) {
-    throw new Error(`Replay fixture not found: ${fixturePath}`);
+    const available = fs.existsSync(REPLAYS_DIR)
+      ? fs.readdirSync(REPLAYS_DIR).filter((f) => f.endsWith('.json')).map((f) => f.replace('.json', ''))
+      : [];
+    throw new Error(
+      `Replay fixture not found: ${fixturePath}. Available fixture ids: [${available.join(', ') || 'none'}]. ` +
+        `Create server/src/lib/replays/${fixtureId}.json (see scripts/buildReplayFixture.js) or point this match at one of the available ids.`
+    );
   }
   const content = fs.readFileSync(fixturePath, 'utf8');
   return JSON.parse(content);
@@ -60,28 +69,42 @@ function initReplayState(fixtureId) {
 /**
  * Synthesize odds from live score state
  * Since real odds feed was empty, we create plausible odds based on score differential
+ * Made more eventful with higher volatility and dramatic swings
  */
 function synthesizeOdds(score, minute) {
   const goalDiff = score.home - score.away;
   let baseOdds = 1.9; // Starting odds for even match
   
-  // Adjust based on goal difference
+  // Adjust based on goal difference - much more dramatic swings
   if (goalDiff > 0) {
-    baseOdds = 1.9 - (goalDiff * 0.3); // Home winning -> odds shorten
+    baseOdds = 1.9 - (goalDiff * 0.6); // Home winning -> odds shorten significantly
   } else if (goalDiff < 0) {
-    baseOdds = 1.9 + (Math.abs(goalDiff) * 0.3); // Away winning -> odds lengthen
+    baseOdds = 1.9 + (Math.abs(goalDiff) * 0.6); // Away winning -> odds lengthen significantly
   }
   
-  // Time decay: odds drift toward 1.0 as match progresses
-  const timeDecay = Math.max(0, (120 - minute) / 120) * 0.2;
+  // Time pressure: odds become more volatile as match progresses
+  const timePressure = Math.min(1, minute / 90);
+  const volatilityMultiplier = 1 + (timePressure * 1.5); // 1x to 2.5x volatility
+  
+  // Dramatic time decay: odds drift toward 1.0 as match progresses
+  const timeDecay = Math.max(0, (120 - minute) / 120) * 0.5;
   baseOdds = baseOdds - timeDecay;
   
-  // Add small random jitter for realism
-  const jitter = (Math.random() - 0.5) * 0.05;
+  // Add larger random jitter for realism and excitement
+  const jitter = (Math.random() - 0.5) * 0.15 * volatilityMultiplier;
   baseOdds = baseOdds + jitter;
   
-  // Clamp to reasonable bounds
-  return Math.max(1.05, Math.min(5.0, Number(baseOdds.toFixed(3))));
+  // Add momentum swings based on minute (more volatility in key periods)
+  if (minute >= 40 && minute <= 45) {
+    // First half injury time chaos
+    baseOdds += (Math.random() - 0.5) * 0.2;
+  } else if (minute >= 85 && minute <= 90) {
+    // Final minutes desperation
+    baseOdds += (Math.random() - 0.5) * 0.3;
+  }
+  
+  // Clamp to reasonable bounds but allow wider range
+  return Math.max(1.01, Math.min(8.0, Number(baseOdds.toFixed(3))));
 }
 
 /**

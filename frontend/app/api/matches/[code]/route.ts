@@ -125,7 +125,7 @@ export async function GET(
         // Fetch trades using run_id if available, otherwise fall back to agent_id
         const { data: trades, error: tradesErr } = await supabaseAdmin
           .from('trades')
-          .select('side, odds, stake, reason, pnl, balance_after, created_at')
+          .select('side, odds, stake, reason, pnl, balance_after, tx_signature, created_at')
           .eq(agentRun ? 'run_id' : 'agent_id', agentRun ? agentRun.id : player.agent_id)
           .order('created_at', { ascending: true })
 
