@@ -93,7 +93,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const { title, description, max_players = 4, initial_purse = 1000, creator_agent_id, creator_agent_name, userId, creatorName, is_replay = false, fixture_id } = body
+    const { title, description, max_players = 4, initial_purse = 1000, creator_agent_id, creator_agent_name, userId, creatorName, is_replay = false, fixture_id, home_team, away_team } = body
 
     // Validate required fields
     if (!title || typeof title !== 'string' || title.trim().length === 0) {
@@ -196,6 +196,8 @@ export async function POST(request: NextRequest) {
           is_replay,
           fixture_id: is_replay ? fixture_id : null,
           agent_match_id: agentMatchId,
+          home_team: home_team || null,
+          away_team: away_team || null,
         },
       ])
       .select()

@@ -4,8 +4,17 @@ import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Header from '@/components/header'
-import { ArrowLeft, Plus } from 'lucide-react'
+import { ArrowLeft, Plus, Loader } from 'lucide-react'
 import { useAuth } from '@/app/providers'
+
+type Fixture = {
+  fixture_id: number
+  home_team: string
+  away_team: string
+  sport: string
+  start_time: string | null
+  timeline_length: number
+}
 
 export default function CreateMatchPage() {
   const router = useRouter()
@@ -21,6 +30,24 @@ export default function CreateMatchPage() {
   const [loadingAgents, setLoadingAgents] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Fixture picker
+  const [fixtures, setFixtures] = useState<Fixture[]>([])
+  const [loadingFixtures, setLoadingFixtures] = useState(true)
+  const [selectedFixture, setSelectedFixture] = useState<Fixture | null>(null)
+
+  const fetchFixtures = useCallback(async () => {
+    try {
+      setLoadingFixtures(true)
+      const res = await fetch('/api/fixtures')
+      const data = await res.json()
+      setFixtures(data.fixtures || [])
+    } catch (err) {
+      console.error('[v0] Error fetching fixtures:', err)
+    } finally {
+      setLoadingFixtures(false)
+    }
+  }, [])
 
   const fetchAgents = useCallback(async () => {
     try {
@@ -44,12 +71,11 @@ export default function CreateMatchPage() {
   }, [user])
 
   useEffect(() => {
+    fetchFixtures()
     if (user?.id) {
       fetchAgents()
     }
-  }, [user?.id, fetchAgents])
-
-
+  }, [user?.id, fetchAgents, fetchFixtures])
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target
@@ -60,7 +86,6 @@ export default function CreateMatchPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    // Validate form inputs
     if (!formData.title || !formData.title.trim()) {
       setError('Match title is required and cannot be empty')
       return
@@ -108,24 +133,28 @@ export default function CreateMatchPage() {
     setError(null)
 
     try {
+      const isReplay = !!selectedFixture
+      const body: any = {
+        title: formData.title.trim(),
+        description: formData.description.trim(),
+        max_players: maxPlayersNum,
+        initial_purse: initialPurseNum,
+        creator_agent_id: selectedAgentData.id,
+        creator_agent_name: selectedAgentData.name,
+        userId: user?.id,
+        creatorName: user?.user_metadata?.name || 'Demo User',
+        is_replay: isReplay,
+        fixture_id: isReplay ? String(selectedFixture!.fixture_id) : undefined,
+        home_team: isReplay ? selectedFixture!.home_team : undefined,
+        away_team: isReplay ? selectedFixture!.away_team : undefined,
+      }
+
       const response = await fetch('/api/matches', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          title: formData.title.trim(),
-          description: formData.description.trim(),
-          max_players: maxPlayersNum,
-          initial_purse: initialPurseNum,
-          creator_agent_id: selectedAgentData.id,
-          creator_agent_name: selectedAgentData.name,
-          userId: user?.id,
-          creatorName: user?.user_metadata?.name || 'Demo User',
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
       })
 
-      // Handle non-JSON responses
       const contentType = response.headers.get('content-type')
       if (!contentType || !contentType.includes('application/json')) {
         throw new Error('Server returned invalid response format')
@@ -133,18 +162,14 @@ export default function CreateMatchPage() {
 
       const data = await response.json()
 
-      // Handle error responses
       if (!response.ok) {
-        const errorMessage = data.error || `Server error: ${response.status}`
-        throw new Error(errorMessage)
+        throw new Error(data.error || `Server error: ${response.status}`)
       }
 
-      // Validate response data
       if (!data.match || !data.match.code) {
         throw new Error('Invalid response: Match code missing')
       }
 
-      // Successfully created match
       router.push(`/matches/${data.match.code}`)
     } catch (err) {
       console.error('[v0] Error creating match:', err)
@@ -201,6 +226,47 @@ export default function CreateMatchPage() {
                 rows={4}
                 className="w-full px-4 py-2 bg-input border border-border rounded-lg text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary resize-none"
               />
+            </div>
+
+            {/* Fixture Picker */}
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-2">
+                Match Fixture
+              </label>
+              {loadingFixtures ? (
+                <div className="w-full px-4 py-2 bg-muted rounded-lg text-muted-foreground flex items-center gap-2">
+                  <Loader className="w-4 h-4 animate-spin" />
+                  Loading fixtures...
+                </div>
+              ) : fixtures.length === 0 ? (
+                <div className="bg-muted/50 rounded-lg p-4 border border-border">
+                  <p className="text-sm text-muted-foreground">No fixtures available.</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <select
+                    value={selectedFixture?.fixture_id ?? ''}
+                    onChange={(e) => {
+                      const fid = Number(e.target.value)
+                      setSelectedFixture(fixtures.find(f => f.fixture_id === fid) || null)
+                      setError(null)
+                    }}
+                    className="w-full px-4 py-2 bg-input border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                  >
+                    <option value="">No fixture (sandbox mode)</option>
+                    {fixtures.map(f => (
+                      <option key={f.fixture_id} value={f.fixture_id}>
+                        {f.home_team} vs {f.away_team} — {f.sport}
+                      </option>
+                    ))}
+                  </select>
+                  {selectedFixture && (
+                    <p className="text-xs text-muted-foreground">
+                      Agents will replay the {selectedFixture.home_team} vs {selectedFixture.away_team} match ({selectedFixture.timeline_length} ticks).
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
 
             <div>

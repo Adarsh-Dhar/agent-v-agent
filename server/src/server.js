@@ -7,6 +7,7 @@ import path from 'path';
 import { supabase } from './lib/supabaseClient.js';
 import { validateAgentConfig, validateRunConfig } from './lib/validateConfig.js';
 import { createFundedRunWallet, ensureMarket } from './lib/solanaClient.js';
+import fs from 'fs';
 
 dotenv.config();
 
@@ -244,6 +245,80 @@ app.post('/agents/:id/stop', async (req, res) => {
 
   if (error) return res.status(500).json({ error: error.message });
   return res.json({ status: 'stopping' });
+});
+
+// ── DUMMY / DEMO ────────────────────────────────────────────────────
+const DUMMY_FIXTURE = {
+  fixture_id: 18241006,
+  home_team: 'England',
+  away_team: 'Argentina',
+  sport: 'soccer',
+  start_time: new Date().toISOString(),
+  timeline_length: 91,
+};
+
+const SIMULATED_FIXTURE = {
+  fixture_id: 99999999,
+  home_team: 'Argentina',
+  away_team: 'England',
+  sport: 'soccer',
+  start_time: new Date().toISOString(),
+  timeline_length: 91,
+  is_replay: true,
+};
+
+// ── FIXTURES ────────────────────────────────────────────────────────
+app.get('/fixtures', async (_req, res) => {
+  try {
+    const { txlineRequest } = await import('./lib/txline.js');
+    
+    // Try to fetch live fixtures from TxLINE API
+    try {
+      const liveFixtures = await txlineRequest('/api/fixtures/snapshot');
+      if (Array.isArray(liveFixtures) && liveFixtures.length > 0) {
+        const fixtures = liveFixtures.map(f => ({
+          fixture_id: f.FixtureId,
+          home_team: f.Participant1,
+          away_team: f.Participant2,
+          sport: 'soccer',
+          start_time: new Date(f.StartTime).toISOString(),
+          competition: f.Competition,
+          game_state: f.GameState,
+          is_replay: false,
+        }));
+        // Always add simulated fixture
+        fixtures.push(SIMULATED_FIXTURE);
+        return res.json({ fixtures });
+      }
+    } catch (txlineError) {
+      console.log('[server] TxLINE fetch failed, falling back to replay fixtures:', txlineError.message);
+    }
+    
+    // Fallback to replay fixtures
+    const replaysDir = path.join(__dirname, 'lib', 'replays');
+    if (!fs.existsSync(replaysDir)) {
+      return res.json({ fixtures: [DUMMY_FIXTURE, SIMULATED_FIXTURE] });
+    }
+    const files = fs.readdirSync(replaysDir).filter(f => f.endsWith('.json'));
+    const fixtures = files.map(f => {
+      const raw = JSON.parse(fs.readFileSync(path.join(replaysDir, f), 'utf8'));
+      return {
+        fixture_id: raw.fixture_id,
+        home_team: raw.home_team,
+        away_team: raw.away_team,
+        sport: raw.sport || 'soccer',
+        start_time: raw.start_time || null,
+        timeline_length: raw.timeline?.length || 0,
+        is_replay: true,
+      };
+    });
+    if (fixtures.length === 0) fixtures.push(DUMMY_FIXTURE);
+    fixtures.push(SIMULATED_FIXTURE);
+    return res.json({ fixtures });
+  } catch (err) {
+    console.error('[server] GET /fixtures error:', err.message);
+    return res.json({ fixtures: [DUMMY_FIXTURE] });
+  }
 });
 
 /** GET /matches/:matchId/leaderboard - runs ranked by total PnL for a match */

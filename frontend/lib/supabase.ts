@@ -120,6 +120,8 @@ export type Match = {
   agent_match_id?: string
   is_replay?: boolean
   fixture_id?: string | number
+  home_team?: string
+  away_team?: string
   created_at: string
   updated_at: string
 }
