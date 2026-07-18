@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import Header from '@/components/header'
 import AgentChart from '@/components/agent-chart'
+import MatchOddsChart from '@/components/match-odds-chart'
 import { Copy, Plus, Loader, Users, Play } from 'lucide-react'
 import { useAuth } from '@/app/providers'
 import type { Match, MatchPlayer, Game } from '@/lib/supabase'
@@ -16,6 +17,7 @@ export default function MatchDetailPage({ params }: { params: Promise<{ code: st
   const [game, setGame] = useState<Game | null>(null)
   const [players, setPlayers] = useState<MatchPlayer[]>([])
   const [agents, setAgents] = useState<any[]>([])
+  const [ticks, setTicks] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [initialLoadDone, setInitialLoadDone] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -93,6 +95,17 @@ export default function MatchDetailPage({ params }: { params: Promise<{ code: st
       const agentsData = await agentsResponse.json()
       if (agentsResponse.ok) {
         setAgents(agentsData.agents || [])
+      }
+
+      // Fetch live odds/score feed for this match, independent of trades
+      try {
+        const ticksResponse = await fetch(`/api/matches/${code}/ticks`)
+        if (ticksResponse.ok) {
+          const ticksData = await ticksResponse.json()
+          setTicks(ticksData.ticks || [])
+        }
+      } catch (err) {
+        console.error('[v0] Error fetching match ticks:', err)
       }
 
       setError(null)
@@ -721,6 +734,16 @@ export default function MatchDetailPage({ params }: { params: Promise<{ code: st
             </div>
           )}
         </div>
+        )}
+
+        {/* Live Match Odds - the raw feed all agents are trading on, shown
+            independent of whether any agent traded on a given tick */}
+        {showCharts && (
+          <MatchOddsChart
+            ticks={ticks}
+            homeTeam={game?.team_a}
+            awayTeam={game?.team_b}
+          />
         )}
 
         {/* Agent Performance Charts */}

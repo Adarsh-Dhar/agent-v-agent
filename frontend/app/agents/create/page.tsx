@@ -145,6 +145,11 @@ export default function CreateAgentPage() {
     setError(null)
     setValidationErrors({})
 
+    if (!user?.id) {
+      setError('You must be logged in to create an agent')
+      return
+    }
+
     if (!agentName.trim()) {
       setError('Please enter an agent name')
       return

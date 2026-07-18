@@ -104,6 +104,24 @@ ALTER TABLE public.trades
 
 CREATE INDEX IF NOT EXISTS trades_run_id_idx ON public.trades(run_id);
 
+-- Live odds/score feed, independent of trades. agentRunner.js writes one row
+-- per (match_id, minute) here on every tick, regardless of whether an agent
+-- actually traded that tick -- this is what lets the frontend show "what the
+-- market is doing right now" at the same time agents are trading on it,
+-- instead of only ever seeing odds retroactively via trade rows.
+CREATE TABLE IF NOT EXISTS public.match_ticks (
+  match_id TEXT NOT NULL,
+  minute INTEGER NOT NULL,
+  odds NUMERIC,
+  score_home INTEGER,
+  score_away INTEGER,
+  event TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  PRIMARY KEY (match_id, minute)
+);
+
+CREATE INDEX IF NOT EXISTS match_ticks_match_id_idx ON public.match_ticks(match_id);
+
 -- Create match_clocks table: shared, race-safe authoritative "match start"
 -- epoch for replay/mock matches. Multiple independently-spawned agent
 -- processes trading the same match_id all read this single row instead of

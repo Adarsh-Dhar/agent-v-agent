@@ -67,6 +67,28 @@ async function updateAgentMetrics(agentId, fields) {
   if (error) log('WARN: failed to update agent row:', error.message);
 }
 
+// Persist the live odds/score/minute feed so the frontend can show "what's
+// happening in the match right now" independent of whether any agent
+// actually traded on this tick. Multiple agent processes trading the same
+// match_id will all call this on roughly the same tick -- `ignoreDuplicates`
+// makes every write after the first a harmless no-op instead of a conflict
+// error, since all agents are reading the identical shared-epoch snapshot
+// anyway (see txlineReplay.js / matchClock.js).
+async function recordMatchTick(matchId, snapshot) {
+  const { error } = await supabase.from('match_ticks').upsert(
+    {
+      match_id: matchId,
+      minute: snapshot.minute,
+      odds: snapshot.odds,
+      score_home: snapshot.score?.home ?? null,
+      score_away: snapshot.score?.away ?? null,
+      event: snapshot.event ?? null,
+    },
+    { onConflict: 'match_id,minute', ignoreDuplicates: true }
+  );
+  if (error) log('WARN: failed to record match tick:', error.message);
+}
+
 async function recordTrade(agent, side, odds, stake, reason, pnl = null, balanceAfter = null) {
   const { error } = await supabase.from('trades').insert({
     agent_id: agent.agent_id,
@@ -498,7 +520,7 @@ async function tick(agent) {
   if (history.length > MAX_HISTORY_TICKS) history.shift();
 
   log(`odds=${snapshot.odds} minute=${snapshot.minute} event=${snapshot.event ?? '-'}`);
-
+  await recordMatchTick(agent.match_id, snapshot);
   if (fixtureDetails === null) {
     const ctx = await loadContextAwareness(agent);
     agent.__contextMultiplier = ctx.multiplier;
