@@ -499,58 +499,64 @@ export async function PATCH(
     }
 
     // When stopping a match (status → pending), clean up everything so the
-    // next start gets a completely fresh state.
+    // next start gets a completely fresh state. Wrap in try-catch so
+    // cleanup failures don't prevent the status update from succeeding.
     if (status === 'pending') {
-      const matchIdForAgents = match.agent_match_id || match.id
+      try {
+        const matchIdForAgents = match.agent_match_id || match.id
 
-      // 1. Mark agent_runs as stopped (NOT delete) so the agentRunner
-      //    processes see status=stopped and exit cleanly via loadState().
-      Promise.resolve(supabaseAdmin.from('agent_runs').update({ status: 'stopped' }).eq('match_id', matchIdForAgents)).catch(() => {})
-      if (matchIdForAgents !== match.id) {
-        Promise.resolve(supabaseAdmin.from('agent_runs').update({ status: 'stopped' }).eq('match_id', match.id)).catch(() => {})
-      }
+        // 1. Mark agent_runs as stopped (NOT delete) so the agentRunner
+        //    processes see status=stopped and exit cleanly via loadState().
+        supabaseAdmin.from('agent_runs').update({ status: 'stopped' }).eq('match_id', matchIdForAgents).then(() => {}).catch(() => {})
+        if (matchIdForAgents !== match.id) {
+          supabaseAdmin.from('agent_runs').update({ status: 'stopped' }).eq('match_id', match.id).then(() => {}).catch(() => {})
+        }
 
-      // 2. Delete trades for this match
-      await supabaseAdmin.from('trades').delete().eq('match_id', matchIdForAgents).catch(() => {})
+        // 2. Delete trades for this match
+        await supabaseAdmin.from('trades').delete().eq('match_id', matchIdForAgents).catch(() => {})
 
-      // 3. Delete match_ticks and match_clocks
-      if (match.agent_match_id) {
-        await supabaseAdmin.from('match_clocks').delete().eq('match_id', match.agent_match_id).catch(() => {})
-      }
-      await supabaseAdmin.from('match_ticks').delete().eq('match_id', matchIdForAgents).catch(() => {})
+        // 3. Delete match_ticks and match_clocks
+        if (match.agent_match_id) {
+          await supabaseAdmin.from('match_clocks').delete().eq('match_id', match.agent_match_id).catch(() => {})
+        }
+        await supabaseAdmin.from('match_ticks').delete().eq('match_id', matchIdForAgents).catch(() => {})
 
-      // 4. Reset agents table balance/pnl so stale values don't leak back
-      const { data: playerAgents } = await supabaseAdmin
-        .from('match_players')
-        .select('agent_id')
-        .eq('match_id', match.id)
-      if (playerAgents) {
-        const agentIds = [...new Set(playerAgents.map((p: any) => p.agent_id).filter(Boolean))]
-        await Promise.all(
-          agentIds.map((id: string) =>
-            supabaseAdmin
-              .from('agents')
-              .update({ balance: null, realized_pnl: 0, unrealized_pnl: 0, trade_count: 0 })
-              .eq('id', id)
-              .catch(() => {})
+        // 4. Reset agents table balance/pnl so stale values don't leak back
+        const { data: playerAgents } = await supabaseAdmin
+          .from('match_players')
+          .select('agent_id')
+          .eq('match_id', match.id)
+        if (playerAgents) {
+          const agentIds = [...new Set(playerAgents.map((p: any) => p.agent_id).filter(Boolean))]
+          await Promise.all(
+            agentIds.map((id: string) =>
+              supabaseAdmin
+                .from('agents')
+                .update({ balance: null, realized_pnl: 0, unrealized_pnl: 0, trade_count: 0 })
+                .eq('id', id)
+                .catch(() => {})
+            )
           )
-        )
-      }
+        }
 
-      // 5. Restore each player's purse to their initial_purse
-      const { data: playersToReset } = await supabaseAdmin
-        .from('match_players')
-        .select('id, initial_purse')
-        .eq('match_id', match.id)
-      if (playersToReset) {
-        await Promise.all(
-          playersToReset.map((p: any) =>
-            supabaseAdmin
-              .from('match_players')
-              .update({ purse: p.initial_purse, pnl: 0 })
-              .eq('id', p.id)
+        // 5. Restore each player's purse to their initial_purse
+        const { data: playersToReset } = await supabaseAdmin
+          .from('match_players')
+          .select('id, initial_purse')
+          .eq('match_id', match.id)
+        if (playersToReset) {
+          await Promise.all(
+            playersToReset.map((p: any) =>
+              supabaseAdmin
+                .from('match_players')
+                .update({ purse: p.initial_purse, pnl: 0 })
+                .eq('id', p.id)
+                .catch(() => {})
+            )
           )
-        )
+        }
+      } catch (cleanupErr) {
+        console.error('[v0] Cleanup error during match stop (non-fatal):', cleanupErr)
       }
     }
 

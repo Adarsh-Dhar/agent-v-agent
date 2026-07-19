@@ -350,15 +350,55 @@ export default function MatchRunPage({ params }: { params: Promise<{ code: strin
                 const currentBalance = agent?.balance ?? player.purse ?? budgetCap
                 const tradeCount = agent?.trade_count ?? trades.length
 
-                const chartData = trades.length > 0
-                  ? trades.map((t: any, i: number) => ({
-                      minute: t.match_minute != null ? t.match_minute : i,
-                      balance: t.balance_after != null
-                        ? t.balance_after
-                        : budgetCap + ((currentBalance - budgetCap) * (i + 1)) / trades.length,
-                      odds: t.odds,
-                    }))
-                  : [{ minute: 0, balance: currentBalance, odds: 1.5 }]
+                const decodedTicks = ticks.map((t: any) => ({
+                  ...t,
+                  minute: t.minute >= 100 ? Math.floor(t.minute / 100) : t.minute,
+                }))
+                const tickMinutes = [...new Set(decodedTicks.map((t: any) => t.minute))].sort((a: number, b: number) => a - b)
+
+                const balancePoints: Array<{ minute: number; balance: number }> = []
+                const startMin = tickMinutes.length > 0 ? tickMinutes[0] : 0
+                balancePoints.push({ minute: startMin, balance: budgetCap })
+                for (const t of trades) {
+                  if (t.match_minute != null && t.balance_after != null) {
+                    balancePoints.push({ minute: t.match_minute, balance: t.balance_after })
+                  }
+                }
+                const endMin = tickMinutes.length > 0 ? tickMinutes[tickMinutes.length - 1] : 0
+                const lastPt = balancePoints[balancePoints.length - 1]
+                if (!lastPt || lastPt.minute < endMin) {
+                  balancePoints.push({ minute: endMin, balance: currentBalance })
+                }
+                balancePoints.sort((a, b) => a.minute - b.minute)
+
+                const interpolate = (minute: number): number => {
+                  if (balancePoints.length === 0) return budgetCap
+                  if (minute <= balancePoints[0].minute) return balancePoints[0].balance
+                  if (minute >= balancePoints[balancePoints.length - 1].minute) return balancePoints[balancePoints.length - 1].balance
+                  for (let i = 0; i < balancePoints.length - 1; i++) {
+                    const left = balancePoints[i]
+                    const right = balancePoints[i + 1]
+                    if (left.minute <= minute && right.minute >= minute) {
+                      if (left.minute === right.minute) return left.balance
+                      const progress = (minute - left.minute) / (right.minute - left.minute)
+                      return left.balance + (right.balance - left.balance) * progress
+                    }
+                  }
+                  return balancePoints[balancePoints.length - 1].balance
+                }
+
+                const chartData = tickMinutes.length > 0
+                  ? tickMinutes.map((minute: number) => {
+                      const tick = decodedTicks.find((t: any) => t.minute === minute)
+                      return { minute, balance: interpolate(minute), odds: tick?.odds ?? 1.5 }
+                    })
+                  : trades.length > 0
+                    ? trades.map((t: any, i: number) => ({
+                        minute: t.match_minute ?? i,
+                        balance: t.balance_after ?? budgetCap,
+                        odds: t.odds ?? 1.5,
+                      }))
+                    : [{ minute: 0, balance: currentBalance, odds: 1.5 }]
 
                 return (
                   <AgentChart

@@ -46,11 +46,11 @@ export default function AgentChart({
           <StatPill label="Balance" value={formatSol(balance)} />
           <StatPill 
             label="Realized PnL" 
-            value={`${realizedPnL >= 0 ? '+' : ''}${realizedPnL}`}
+            value={`${realizedPnL >= 0 ? '+' : ''}${Number(realizedPnL.toFixed(5))}`}
             isPositive={realizedPnL >= 0}
           />
           <StatPill label="Unrealized" 
-            value={`${unrealizedPnL >= 0 ? '+' : ''}${unrealizedPnL}`}
+            value={`${unrealizedPnL >= 0 ? '+' : ''}${Number(unrealizedPnL.toFixed(5))}`}
             isPositive={unrealizedPnL >= 0}
           />
           <TradesDropdown trades={trades} />
@@ -106,7 +106,7 @@ export default function AgentChart({
               <TrendingDown className="w-4 h-4 text-destructive" />
             )}
             <span className={`font-bold text-lg ${isPositive ? 'text-primary' : 'text-destructive'}`}>
-              {isPositive ? '+' : ''}{totalPnL}
+              {isPositive ? '+' : ''}{Number(totalPnL.toFixed(5))}
             </span>
           </div>
         </div>
