@@ -7,6 +7,7 @@ import path from 'path';
 import { supabase } from './lib/supabaseClient.js';
 import { validateAgentConfig, validateRunConfig } from './lib/validateConfig.js';
 import { createFundedRunWallet, ensureMarket } from './lib/solanaClient.js';
+import { resetMatchEpoch } from './lib/matchClock.js';
 import fs from 'fs';
 
 dotenv.config();
@@ -182,29 +183,25 @@ app.post('/agents/:id/run', async (req, res) => {
 
   // Check if this is a replay match (format: replay-{fixture-id})
   const isReplayMatch = match_id?.startsWith('replay-');
-  
-  // For replay matches, skip Solana setup and use mock wallet
-  // For live matches, create real wallet and ensure market exists
-  let wallet;
+
+  // Clean up old ticks, trades, and stopped runs from previous replays
   if (isReplayMatch) {
-    // Replay matches don't use real on-chain trading
-    // Use a mock wallet for compatibility with existing code
-    wallet = {
-      keypair: {
-        publicKey: { toBase58: () => 'mock-replay-wallet' },
-        secretKey: new Uint8Array(64)
-      }
-    };
-  } else {
-    // Real fund movement starts here: mint a fresh devnet wallet for this run
-    // and fund it with budget_cap SOL, then make sure the on-chain market for
-    // this match exists (and is house-seeded) before the agent starts trading.
-    try {
-      wallet = await createFundedRunWallet(budget_cap);
-      await ensureMarket(match_id);
-    } catch (err) {
-      return res.status(502).json({ error: `Solana setup failed: ${err.message}` });
-    }
+    await supabase.from('match_ticks').delete().eq('match_id', match_id);
+    await supabase.from('trades').delete().eq('match_id', match_id);
+    await supabase.from('agent_runs').delete().eq('match_id', match_id).eq('status', 'stopped');
+    // Reset the shared match clock so the replay starts from minute 0
+    await resetMatchEpoch(match_id).catch(() => {});
+  }
+  
+  // Fund a fresh devnet wallet for this run with budget_cap SOL,
+  // then make sure the on-chain market for this match exists (and is
+  // house-seeded) before the agent starts trading.
+  let wallet;
+  try {
+    wallet = await createFundedRunWallet(budget_cap);
+    await ensureMarket(match_id);
+  } catch (err) {
+    return res.status(502).json({ error: `Solana setup failed: ${err.message}` });
   }
 
   const { data: run, error } = await supabase

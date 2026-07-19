@@ -2,43 +2,29 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { getMatchEpoch } from './matchClock.js';
+import { resolveMarketOdds, extractLatestScoreState, priceFor } from './txline.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPLAYS_DIR = path.join(__dirname, 'replays');
+const LOGS_DIR = path.resolve(__dirname, '../../logs');
 
-// Advance to the next timeline event every 1 second of wall-clock time, so
-// minute N of the match fires at second N of the replay -- same pacing as
-// scripts/liveReplayMatch.js, just driven by the shared epoch instead of a
-// local setInterval so every agent process stays in lockstep.
 const TICK_INTERVAL_MS = 1000;
 
-// In-memory cache per match: just the loaded fixture + a "finished" latch.
-// Notably, this NO LONGER holds a per-process currentIndex/lastTickTime --
-// those used to be incremented locally on each tick, which is exactly what
-// let different agents' processes drift apart from each other. The timeline
-// position is now derived fresh on every call from the shared epoch (see
-// getMatchEpoch below), so every process -- no matter when it started
-// polling -- computes the identical index for a given wall-clock time.
+const LOG_FIXTURE_MAP = {
+  '99999999': '18241006',
+};
+
 const replayStates = new Map();
 
-/**
- * Check if a match ID is a replay match (format: replay-{fixture-id})
- */
 export function isReplayMatch(matchId) {
   return matchId?.startsWith('replay-');
 }
 
-/**
- * Extract fixture ID from replay match ID
- */
 function extractFixtureId(matchId) {
   if (!isReplayMatch(matchId)) return null;
   return matchId.replace('replay-', '');
 }
 
-/**
- * Load a replay fixture from disk
- */
 function loadFixture(fixtureId) {
   const fixturePath = path.join(REPLAYS_DIR, `${fixtureId}.json`);
   if (!fs.existsSync(fixturePath)) {
@@ -54,87 +40,192 @@ function loadFixture(fixtureId) {
   return JSON.parse(content);
 }
 
-/**
- * Initialize (process-local) replay state for a match: just the loaded
- * fixture data. No timing state lives here anymore -- see module header.
- */
+function synthesizeOdds(score, minute) {
+  const goalDiff = score.home - score.away;
+  let baseOdds = 1.9;
+  if (goalDiff > 0) {
+    baseOdds = 1.9 - (goalDiff * 0.6);
+  } else if (goalDiff < 0) {
+    baseOdds = 1.9 + (Math.abs(goalDiff) * 0.6);
+  }
+  const timePressure = Math.min(1, minute / 90);
+  const volatilityMultiplier = 1 + (timePressure * 1.5);
+  const timeDecay = Math.max(0, (120 - minute) / 120) * 0.5;
+  baseOdds = baseOdds - timeDecay;
+  const jitter = (Math.random() - 0.5) * 0.15 * volatilityMultiplier;
+  baseOdds = baseOdds + jitter;
+  if (minute >= 40 && minute <= 45) {
+    baseOdds += (Math.random() - 0.5) * 0.2;
+  } else if (minute >= 85 && minute <= 90) {
+    baseOdds += (Math.random() - 0.5) * 0.3;
+  }
+  return Math.max(1.01, Math.min(8.0, Number(baseOdds.toFixed(3))));
+}
+
+function loadJsonlFiles(kind) {
+  if (!fs.existsSync(LOGS_DIR)) return [];
+  const files = fs.readdirSync(LOGS_DIR)
+    .filter((f) => f.startsWith(`txline-${kind}-`) && f.endsWith('.jsonl'))
+    .sort()
+    .map((f) => path.join(LOGS_DIR, f));
+  return files.flatMap((fp) =>
+    fs.readFileSync(fp, 'utf-8')
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => { try { return JSON.parse(line); } catch { return null; } })
+      .filter(Boolean)
+  );
+}
+
+function buildTimelineFromLogs(fixtureId, fixture) {
+  const logFixtureId = LOG_FIXTURE_MAP[fixtureId] || fixtureId;
+  const numId = Number(logFixtureId);
+  const isSwapped = fixtureId !== logFixtureId;
+  const oddsEntries = loadJsonlFiles('odds');
+  const scoresEntries = loadJsonlFiles('scores');
+
+  const fixtureOdds = oddsEntries
+    .map((e) => ({ ...e, data: (e.data || []).filter((m) => m.FixtureId === numId) }))
+    .filter((e) => e.data.length > 0);
+
+  const fixtureScores = scoresEntries
+    .map((e) => ({
+      ...e,
+      data: (Array.isArray(e.data) ? e.data : [e.data]).filter((s) => s.FixtureId === numId),
+    }))
+    .filter((e) => e.data.length > 0);
+
+  if (fixtureOdds.length === 0) return null;
+
+  // Pre-build score timeline: process ALL score entries chronologically
+  // maintaining running minute/score state, instead of nearest-neighbor lookup.
+  const scoreTimeline = [];
+  let runningMinute = 0;
+  let runningScore = { home: 0, away: 0 };
+
+  for (const entry of fixtureScores) {
+    const result = extractLatestScoreState(entry.data, runningMinute);
+    runningMinute = result.minute;
+    runningScore = result.score;
+    scoreTimeline.push({
+      time: new Date(entry.fetched_at).getTime(),
+      minute: result.minute,
+      score: { ...result.score },
+      event: result.event,
+    });
+  }
+
+  // Merge odds + score timeline chronologically
+  let scoreIdx = 0;
+  const ticks = [];
+
+  for (const entry of fixtureOdds) {
+    let odds;
+    if (isSwapped) {
+      const market = entry.data.find((m) => m.SuperOddsType === '1X2_PARTICIPANT_RESULT' && (m.MarketPeriod === null || m.MarketPeriod === undefined));
+      odds = priceFor(market, 'part2');
+    } else {
+      odds = resolveMarketOdds(entry.data, { market_focus: '1x2' });
+    }
+    if (odds === null) continue;
+
+    const entryTime = new Date(entry.fetched_at).getTime();
+
+    // Advance scoreIdx to the latest score entry at or before this time
+    while (scoreIdx < scoreTimeline.length - 1 && scoreTimeline[scoreIdx + 1].time <= entryTime) {
+      scoreIdx++;
+    }
+
+    const scoreState = scoreTimeline[scoreIdx] || scoreTimeline[0];
+
+    ticks.push({
+      odds,
+      score: scoreState.score,
+      minute: scoreState.minute,
+      event: scoreState.event,
+      timestamp: entry.fetched_at,
+    });
+  }
+
+  if (ticks.length === 0) return null;
+
+  const homeTeam = fixture.home_team || 'Home';
+  const awayTeam = fixture.away_team || 'Away';
+  let lastHomeGoals = 0;
+  let lastAwayGoals = 0;
+
+  const timeline = ticks.map((tick, i) => {
+    const events = [];
+    if (i === 0) events.push({ type: 'kickoff' });
+    if (tick.score.home > lastHomeGoals) {
+      events.push({ type: 'goal', team: homeTeam });
+      lastHomeGoals = tick.score.home;
+    }
+    if (tick.score.away > lastAwayGoals) {
+      events.push({ type: 'goal', team: awayTeam });
+      lastAwayGoals = tick.score.away;
+    }
+
+    let period = 'first_half';
+    if (tick.minute >= 105) period = 'penalty_shootout';
+    else if (tick.minute >= 90) period = 'extra_time';
+    else if (tick.minute >= 45) period = 'second_half';
+
+    const displayScore = isSwapped
+      ? { home: tick.score.away, away: tick.score.home }
+      : tick.score;
+
+    return {
+      seq: i,
+      minute: tick.minute,
+      period,
+      score: displayScore,
+      events,
+      odds: tick.odds,
+      clock_seconds: tick.minute * 60,
+      timestamp: tick.timestamp,
+    };
+  });
+
+  return {
+    fixture_id: Number(fixtureId),
+    home_team: homeTeam,
+    away_team: awayTeam,
+    timeline,
+  };
+}
+
 function initReplayState(fixtureId) {
-  const fixture = loadFixture(fixtureId);
+  let fixture = loadFixture(fixtureId);
+
+  const logTimeline = buildTimelineFromLogs(fixtureId, fixture);
+  if (logTimeline) {
+    console.log(`[replay-${fixtureId}] Loaded ${logTimeline.timeline.length} ticks from raw JSONL logs`);
+    fixture = logTimeline;
+  } else {
+    console.log(`[replay-${fixtureId}] Using fixture JSON (${fixture.timeline.length} ticks)`);
+  }
+
   return {
     fixture,
     isFinished: false,
   };
 }
 
-/**
- * Synthesize odds from live score state
- * Since real odds feed was empty, we create plausible odds based on score differential
- * Made more eventful with higher volatility and dramatic swings
- */
-function synthesizeOdds(score, minute) {
-  const goalDiff = score.home - score.away;
-  let baseOdds = 1.9; // Starting odds for even match
-  
-  // Adjust based on goal difference - much more dramatic swings
-  if (goalDiff > 0) {
-    baseOdds = 1.9 - (goalDiff * 0.6); // Home winning -> odds shorten significantly
-  } else if (goalDiff < 0) {
-    baseOdds = 1.9 + (Math.abs(goalDiff) * 0.6); // Away winning -> odds lengthen significantly
-  }
-  
-  // Time pressure: odds become more volatile as match progresses
-  const timePressure = Math.min(1, minute / 90);
-  const volatilityMultiplier = 1 + (timePressure * 1.5); // 1x to 2.5x volatility
-  
-  // Dramatic time decay: odds drift toward 1.0 as match progresses
-  const timeDecay = Math.max(0, (120 - minute) / 120) * 0.5;
-  baseOdds = baseOdds - timeDecay;
-  
-  // Add larger random jitter for realism and excitement
-  const jitter = (Math.random() - 0.5) * 0.15 * volatilityMultiplier;
-  baseOdds = baseOdds + jitter;
-  
-  // Add momentum swings based on minute (more volatility in key periods)
-  if (minute >= 40 && minute <= 45) {
-    // First half injury time chaos
-    baseOdds += (Math.random() - 0.5) * 0.2;
-  } else if (minute >= 85 && minute <= 90) {
-    // Final minutes desperation
-    baseOdds += (Math.random() - 0.5) * 0.3;
-  }
-  
-  // Clamp to reasonable bounds but allow wider range
-  return Math.max(1.01, Math.min(8.0, Number(baseOdds.toFixed(3))));
-}
-
-/**
- * Get the next replay snapshot for a match
- * Advances through the timeline based on time intervals
- */
 export async function fetchReplaySnapshot(matchId) {
   const fixtureId = extractFixtureId(matchId);
   if (!fixtureId) {
     throw new Error(`Invalid replay match ID: ${matchId}`);
   }
-  
-  // Get or initialize (process-local) fixture state
+
   let state = replayStates.get(matchId);
   if (!state) {
     state = initReplayState(fixtureId);
     replayStates.set(matchId, state);
   }
 
-  // Shared, race-safe start time for this match_id. Every process trading
-  // this match -- no matter which one asked first, or how many seconds late
-  // a later process's spawn/connect happened -- gets back the exact same
-  // epoch, because it's elected once in Supabase (see matchClock.js).
   const epoch = await getMatchEpoch(matchId);
 
-  // Timeline index is a pure function of elapsed wall-clock time since the
-  // shared epoch, NOT a counter incremented per-tick. This is what makes it
-  // self-correcting: it doesn't matter if a tick was slow, missed, or this
-  // is the very first call from a process that joined late -- every reader
-  // converges on the same index for the same wall-clock moment.
   const elapsed = Date.now() - epoch;
   const rawIndex = Math.floor(elapsed / TICK_INTERVAL_MS);
   const lastIndex = state.fixture.timeline.length - 1;
@@ -145,18 +236,15 @@ export async function fetchReplaySnapshot(matchId) {
   }
 
   const currentEvent = state.fixture.timeline[currentIndex];
-  
-  // Build event description from timeline events
+
   let eventDesc = null;
   if (currentEvent.events && currentEvent.events.length > 0) {
     const mainEvent = currentEvent.events[0];
     eventDesc = `${mainEvent.type}${mainEvent.team ? ` ${mainEvent.team}` : ''}`;
   }
-  
-  // Use real fixture odds if present; fall back to synthetic only when
-  // the fixture doesn't include an odds field (backwards compat).
+
   const odds = currentEvent.odds ?? synthesizeOdds(currentEvent.score, currentEvent.minute);
-  
+
   return {
     match_id: matchId,
     odds,
@@ -169,14 +257,6 @@ export async function fetchReplaySnapshot(matchId) {
   };
 }
 
-/**
- * Reset (process-local) replay state for a match. This only clears this
- * process's cached fixture/isFinished latch -- the shared start epoch in
- * Supabase is untouched, so other processes' timelines are unaffected and
- * this process will pick up exactly where the shared clock says it should.
- * To actually restart a match's clock for everyone, call
- * matchClock.resetMatchEpoch(matchId) explicitly.
- */
 export function resetReplay(matchId) {
   replayStates.delete(matchId);
 }

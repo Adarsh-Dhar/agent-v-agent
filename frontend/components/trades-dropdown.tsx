@@ -15,7 +15,7 @@ export type TradeRow = {
 }
 
 function isSimulatedSignature(sig: string | null) {
-  return !sig || sig === 'replay-simulated' || sig.startsWith('mock')
+  return !sig
 }
 
 function explorerUrl(signature: string) {

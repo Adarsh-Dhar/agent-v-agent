@@ -462,6 +462,12 @@ export async function PATCH(
       )
     }
 
+    // When stopping a match (status → pending), reset the match clock so the
+    // next start gets a fresh replay epoch from minute 0.
+    if (status === 'pending' && match.agent_match_id) {
+      await supabaseAdmin.from('match_clocks').delete().eq('match_id', match.agent_match_id).then(() => {}).catch(() => {})
+    }
+
     return NextResponse.json({ match: updatedMatch }, { status: 200 })
   } catch (error) {
     console.error('[v0] Error in PATCH /api/matches/[code]:', error)

@@ -77,7 +77,10 @@ async function updateAgentMetrics(agentId, fields) {
 // actually traded on this tick. For live matches we encode seconds into
 // the minute field (minute*100+seconds) so every tick gets its own unique
 // row. The frontend decodes this back to the real minute for display.
-// For replay matches we use the real minute directly with upsert dedup.
+// For replay matches we use the real minute directly.
+// For live matches we encode seconds into the minute field (minute*100+seconds)
+// so every tick gets its own unique row. The frontend decodes this back to the
+// real minute for display.
 async function recordMatchTick(matchId, snapshot) {
   const isReplay = matchId?.startsWith('replay-');
 
@@ -85,30 +88,15 @@ async function recordMatchTick(matchId, snapshot) {
     ? snapshot.minute
     : snapshot.minute * 100 + Math.floor((Date.now() / 1000) % 60);
 
-  if (isReplay) {
-    const { error } = await supabase.from('match_ticks').upsert(
-      {
-        match_id: matchId,
-        minute: storeMinute,
-        odds: snapshot.odds,
-        score_home: snapshot.score?.home ?? null,
-        score_away: snapshot.score?.away ?? null,
-        event: snapshot.event ?? null,
-      },
-      { onConflict: 'match_id,minute', ignoreDuplicates: true }
-    );
-    if (error) log('WARN: failed to record match tick:', error.message);
-  } else {
-    const { error } = await supabase.from('match_ticks').insert({
-      match_id: matchId,
-      minute: storeMinute,
-      odds: snapshot.odds,
-      score_home: snapshot.score?.home ?? null,
-      score_away: snapshot.score?.away ?? null,
-      event: snapshot.event ?? null,
-    });
-    if (error) log('WARN: failed to record match tick:', error.message);
-  }
+  const { error } = await supabase.from('match_ticks').insert({
+    match_id: matchId,
+    minute: storeMinute,
+    odds: snapshot.odds,
+    score_home: snapshot.score?.home ?? null,
+    score_away: snapshot.score?.away ?? null,
+    event: snapshot.event ?? null,
+  });
+  if (error) log('WARN: failed to record match tick:', error.message);
 }
 
 async function recordTrade(agent, side, odds, stake, reason, pnl = null, balanceAfter = null, txSignature = null) {
@@ -147,36 +135,25 @@ function markToMarket(entryOdds, currentOdds, side, stake) {
 async function closePosition(agent, snapshot, reason) {
   const balanceBefore = agent.balance;
   const { tradeId, side, stake } = position;
-  
-  // Check if this is a replay match
-  const isReplay = agent.match_id?.startsWith('replay-');
 
   let signature;
   let newBalance;
   let realized;
 
-  if (isReplay) {
-    // For replay matches, simulate PnL calculation instead of using on-chain
-    realized = markToMarket(position.odds, snapshot.odds, position.side, position.stake);
-    newBalance = balanceBefore + realized;
-    signature = 'replay-simulated';
-  } else {
-    // For live matches, use on-chain operations
-    try {
-      ({ signature } = await closePositionOnChain({
-        matchId: agent.match_id,
-        traderPubkey: traderKeypair.publicKey,
-        tradeId,
-        exitOdds: snapshot.odds,
-      }));
-    } catch (err) {
-      log(`ERROR: close_position on-chain call failed, leaving position open: ${err.message}`);
-      return; // don't clear `position` or touch balance -- nothing actually closed
-    }
-
-    newBalance = await getWalletBalanceSol(traderKeypair.publicKey);
-    realized = newBalance - balanceBefore;
+  try {
+    ({ signature } = await closePositionOnChain({
+      matchId: agent.match_id,
+      traderPubkey: traderKeypair.publicKey,
+      tradeId,
+      exitOdds: snapshot.odds,
+    }));
+  } catch (err) {
+    log(`ERROR: close_position on-chain call failed, leaving position open: ${err.message}`);
+    return;
   }
+
+  newBalance = await getWalletBalanceSol(traderKeypair.publicKey);
+  realized = newBalance - balanceBefore;
 
   const newRealizedTotal = (agent.realized_pnl ?? 0) + realized;
 
@@ -630,67 +607,37 @@ async function tick(agent) {
 
     const tradeId = nextTradeId;
     let signature;
-    
-    // Check if this is a replay match
-    const isReplay = agent.match_id?.startsWith('replay-');
-    
-    if (isReplay) {
-      // For replay matches, simulate position opening without on-chain operations
-      signature = 'replay-simulated';
-      nextTradeId += 1;
 
-      position = { side: decision.action, odds: snapshot.odds, stake, entryMinute: snapshot.minute, tradeId };
-      lastTradeAt = Date.now();
-      signalStreak = { action: null, count: 0 };
-      const newTradeCount = (agent.trade_count ?? 0) + 1;
-      // For replay, just deduct stake from balance (simulated)
-      const newBalance = agent.balance - stake;
-
-      log(`OPEN ${decision.action} stake=${stake.toFixed(4)} @odds=${snapshot.odds} balance=${newBalance.toFixed(4)} reason=${decision.reason} tx=${signature}`);
-      await recordTrade(agent, decision.action, snapshot.odds, stake, decision.reason, null, newBalance);
-      await updateRun({ trade_count: newTradeCount, status: 'running', balance: newBalance });
-      await updateAgentMetrics(agent.agent_id, {
-        trade_count: newTradeCount,
-        balance: newBalance,
-      });
-      agent.trade_count = newTradeCount;
-      agent.balance = newBalance;
-    } else {
-      // For live matches, use on-chain operations
-      try {
-        ({ signature } = await openPositionOnChain({
-          traderKeypair,
-          matchId: agent.match_id,
-          tradeId,
-          side: decision.action,
-          stakeSol: stake,
-          entryOdds: snapshot.odds,
-        }));
-      } catch (err) {
-        log(`ERROR: open_position on-chain call failed, skipping trade: ${err.message}`);
-        return; // nothing was escrowed, so there's no local state to roll back
-      }
-      nextTradeId += 1;
-
-      position = { side: decision.action, odds: snapshot.odds, stake, entryMinute: snapshot.minute, tradeId };
-      lastTradeAt = Date.now();
-      signalStreak = { action: null, count: 0 };
-      const newTradeCount = (agent.trade_count ?? 0) + 1;
-      // The stake is now sitting in the market vault, so the wallet's real
-      // balance is the source of truth -- read it back instead of subtracting
-      // `stake` from a JS number.
-      const newBalance = await getWalletBalanceSol(traderKeypair.publicKey);
-
-      log(`OPEN ${decision.action} stake=${stake.toFixed(4)} @odds=${snapshot.odds} balance=${newBalance.toFixed(4)} reason=${decision.reason} tx=${signature}`);
-      await recordTrade(agent, decision.action, snapshot.odds, stake, decision.reason, null, newBalance, signature);
-      await updateRun({ trade_count: newTradeCount, status: 'running', balance: newBalance });
-      await updateAgentMetrics(agent.agent_id, {
-        trade_count: newTradeCount,
-        balance: newBalance,
-      });
-      agent.trade_count = newTradeCount;
-      agent.balance = newBalance;
+    try {
+      ({ signature } = await openPositionOnChain({
+        traderKeypair,
+        matchId: agent.match_id,
+        tradeId,
+        side: decision.action,
+        stakeSol: stake,
+        entryOdds: snapshot.odds,
+      }));
+    } catch (err) {
+      log(`ERROR: open_position on-chain call failed, skipping trade: ${err.message}`);
+      return;
     }
+    nextTradeId += 1;
+
+    position = { side: decision.action, odds: snapshot.odds, stake, entryMinute: snapshot.minute, tradeId };
+    lastTradeAt = Date.now();
+    signalStreak = { action: null, count: 0 };
+    const newTradeCount = (agent.trade_count ?? 0) + 1;
+    const newBalance = await getWalletBalanceSol(traderKeypair.publicKey);
+
+    log(`OPEN ${decision.action} stake=${stake.toFixed(4)} @odds=${snapshot.odds} balance=${newBalance.toFixed(4)} reason=${decision.reason} tx=${signature}`);
+    await recordTrade(agent, decision.action, snapshot.odds, stake, decision.reason, null, newBalance, signature);
+    await updateRun({ trade_count: newTradeCount, status: 'running', balance: newBalance });
+    await updateAgentMetrics(agent.agent_id, {
+      trade_count: newTradeCount,
+      balance: newBalance,
+    });
+    agent.trade_count = newTradeCount;
+    agent.balance = newBalance;
   }
 }
 
@@ -699,24 +646,12 @@ async function main() {
   let agent = await loadState();
   log(`loaded config: decision_style=${agent.decision_style} market_focus=${agent.market_focus} sizing=${agent.position_sizing} match=${agent.match_id} budget=${agent.budget_cap}`);
 
-  // Check if this is a replay match
-  const isReplay = agent.match_id?.startsWith('replay-');
-  
-  if (isReplay) {
-    // For replay matches, use a mock keypair
-    traderKeypair = {
-      publicKey: { toBase58: () => 'mock-replay-wallet' },
-      secretKey: new Uint8Array(64)
-    };
-    log(`replay mode: using mock wallet for match ${agent.match_id}`);
-  } else {
-    // For live matches, require real wallet
-    if (!agent.wallet_secret_key) {
-      throw new Error(`run ${runId} has no wallet_secret_key -- was it created via POST /agents/:id/run after the Solana integration was added?`);
-    }
-    traderKeypair = keypairFromSecretArray(agent.wallet_secret_key);
+  // Every run gets a real funded wallet. Load the keypair from DB.
+  if (!agent.wallet_secret_key) {
+    throw new Error(`run ${runId} has no wallet_secret_key -- was it created via POST /agents/:id/run?`);
   }
-  
+  traderKeypair = keypairFromSecretArray(agent.wallet_secret_key);
+
   // Resume trade_id numbering where the last run left off, in case this
   // process restarted mid-run (trade_count only increments on OPEN, so it
   // equals the next unused nonce for this trader+market).
@@ -724,13 +659,7 @@ async function main() {
 
   // Balance is real chain state now, not whatever the DB row says -- sync
   // it once at startup so a restart doesn't reintroduce a phantom number.
-  let chainBalance;
-  if (isReplay) {
-    // For replay matches, use the balance from the DB
-    chainBalance = agent.balance;
-  } else {
-    chainBalance = await getWalletBalanceSol(traderKeypair.publicKey);
-  }
+  let chainBalance = await getWalletBalanceSol(traderKeypair.publicKey);
   agent.balance = chainBalance;
   await updateRun({ balance: chainBalance });
   await updateAgentMetrics(agent.agent_id, { balance: chainBalance });

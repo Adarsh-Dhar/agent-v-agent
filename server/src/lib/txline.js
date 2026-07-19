@@ -208,7 +208,7 @@ function parseLine(marketParameters) {
   return match ? Number(match[1]) : null;
 }
 
-function priceFor(market, priceName) {
+export function priceFor(market, priceName) {
   if (!market) return null;
   const idx = market.PriceNames?.indexOf(priceName);
   if (idx == null || idx < 0) return null;

@@ -168,6 +168,7 @@ export default function MatchRunPage({ params }: { params: Promise<{ code: strin
         setCountdown(3)
       } else {
         setShowCharts(true)
+        startAgentRuns()
       }
     }
   }, [matchStarted, countdown, showCharts, initialLoadDone, hasAutoStarted])
