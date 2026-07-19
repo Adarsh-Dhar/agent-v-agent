@@ -9,6 +9,20 @@ import { evaluateSignal, computeStake } from './lib/strategyEngine.js';
 import { reflectOnStrategy, shouldTriggerReflection } from './lib/llmReflection.js';
 import { selfAdjust } from './lib/selfAdjust.js';
 import {
+  markToMarket,
+  checkStopLossTakeProfit,
+  checkTimeBasedExit,
+  passesAggressionFilter,
+  getPhaseDecision,
+  reachedMaxReentries,
+  applyExposureCap,
+  computeDrawdownStop,
+  applyReactionLatency as applyReactionLatencyPure,
+  applySideBias as applySideBiasPure,
+  computeContextMultiplier,
+  applyWildcardTrait as applyWildcardTraitPure,
+} from './lib/agentDecisionRules.js';
+import {
   keypairFromSecretArray,
   openPositionOnChain,
   closePositionOnChain,
@@ -27,11 +41,9 @@ if (!runId) {
 // a snapshot every second, which is harmless -- fetchOddsSnapshot has its
 // own upstream rate limiting/caching for that path.
 const POLL_INTERVAL_MS = 1000;
-const HALFTIME_MINUTE = 45;
-const FULLTIME_MINUTE = 90;
 
 const history = [];
-const pendingSnapshots = []; // Reaction Latency: snapshots queued until agent.reaction_latency_ms has elapsed
+let pendingSnapshots = []; // Reaction Latency: snapshots queued until agent.reaction_latency_ms has elapsed
 let position = null; // { side, odds, stake, entryMinute } while a position is open
 let lastTradeAt = 0; // ms timestamp of the last opened trade, used by 'cooldown' aggression
 let signalStreak = { action: null, count: 0 }; // consecutive same-direction signals, used by 'confirmation' aggression
@@ -118,15 +130,6 @@ async function recordTrade(agent, side, odds, stake, reason, pnl = null, balance
   if (error) log('WARN: failed to record trade:', error.message);
 }
 
-// Simple mark-to-market PnL: buying means betting the odds will shorten
-// (price of the outcome goes up in probability terms); we approximate PnL
-// as stake * (odds_at_entry / odds_now - 1) for a 'buy', inverse for 'sell'.
-function markToMarket(entryOdds, currentOdds, side, stake) {
-  const change =
-    side === 'buy' ? (entryOdds - currentOdds) / entryOdds : (currentOdds - entryOdds) / entryOdds;
-  return stake * change;
-}
-
 // Closes whatever position is currently open. The actual PnL calculation
 // and fund movement (vault -> trader) now happens on-chain in
 // close_position -- this just submits the exit odds, then reads the
@@ -188,156 +191,8 @@ async function closePosition(agent, snapshot, reason) {
   await maybeReflect(agent);
 }
 
-// Stop-loss / take-profit check. Returns whether the open position's current
-// PnL% has breached either band, using agent.stop_loss / agent.take_profit
-// (both expressed as percentages, e.g. 5 => 5%).
-function checkStopLossTakeProfit(agent, currentOdds) {
-  const pnlPct = markToMarket(position.odds, currentOdds, position.side, position.stake) / position.stake;
-  const stopLoss = (agent.stop_loss ?? 5) / 100;
-  const takeProfit = (agent.take_profit ?? 15) / 100;
-
-  if (pnlPct <= -stopLoss) {
-    return { exit: true, reason: `stop_loss:${(pnlPct * 100).toFixed(1)}%` };
-  }
-  if (pnlPct >= takeProfit) {
-    return { exit: true, reason: `take_profit:${(pnlPct * 100).toFixed(1)}%` };
-  }
-  return { exit: false };
-}
-
-// Time-based exit: close at halftime if the position was opened in the first
-// half, otherwise close at fulltime.
-function checkTimeBasedExit(currentMinute) {
-  const crossedHalftime = position.entryMinute < HALFTIME_MINUTE && currentMinute >= HALFTIME_MINUTE;
-  const crossedFulltime = currentMinute >= FULLTIME_MINUTE;
-  if (crossedHalftime) return { exit: true, reason: `time_based:halftime_min_${currentMinute}` };
-  if (crossedFulltime) return { exit: true, reason: `time_based:fulltime_min_${currentMinute}` };
-  return { exit: false };
-}
-
-// Aggression gate applied before opening a NEW position.
-// 'instant'      -> always passes
-// 'confirmation' -> requires confirmation_threshold+ consecutive ticks with the same signal direction
-// 'cooldown'     -> requires cooldown_minutes to have elapsed since the last trade
-function passesAggressionFilter(agent, decision, now) {
-  const mode = agent.aggression || 'instant';
-
-  if (mode === 'cooldown') {
-    const cooldownMs = (agent.cooldown_minutes ?? 2) * 60 * 1000;
-    if (now - lastTradeAt < cooldownMs) {
-      const remainingSec = Math.ceil((cooldownMs - (now - lastTradeAt)) / 1000);
-      return { pass: false, reason: `cooldown_active:${remainingSec}s_left` };
-    }
-    return { pass: true };
-  }
-
-  if (mode === 'confirmation') {
-    const threshold = agent.confirmation_threshold ?? 2;
-    if (signalStreak.action === decision.action) {
-      signalStreak.count += 1;
-    } else {
-      signalStreak = { action: decision.action, count: 1 };
-    }
-    if (signalStreak.count < threshold) {
-      return { pass: false, reason: `awaiting_confirmation:${signalStreak.count}/${threshold}` };
-    }
-    return { pass: true };
-  }
-
-  // 'instant' (default): act on the first signal
-  return { pass: true };
-}
-
-// Match-Phase Focus: scales stake size up/down depending on match
-// minute, or gates trading entirely for 'event_triggered' agents.
-function getPhaseDecision(agent, snapshot) {
-  const mode = agent.phase_weighting || 'full_match';
-  const minute = snapshot.minute;
-
-  if (mode === 'early') {
-    if (minute <= 20) return { allow: true, multiplier: 1.5 };
-    return { allow: true, multiplier: 0.5 };
-  }
-
-  if (mode === 'pre_halftime') {
-    if (minute > 20 && minute <= 45) return { allow: true, multiplier: 1.5 };
-    return { allow: true, multiplier: 0.5 };
-  }
-
-  if (mode === 'second_half') {
-    if (minute > 45 && minute <= 75) return { allow: true, multiplier: 1.5 };
-    return { allow: true, multiplier: 0.5 };
-  }
-
-  if (mode === 'late_stoppage') {
-    if (minute > 75) return { allow: true, multiplier: 1.5 };
-    return { allow: true, multiplier: 0.5 };
-  }
-
-  // 'full_match' (default)
-  return { allow: true, multiplier: 1 };
-}
-
-// L. Risk Ceiling: max exposure cap limits any single stake to a percentage
-// of current balance, regardless of what the sizing strategy computed.
-function applyExposureCap(agent, stake) {
-  if (agent.max_exposure_pct == null) return stake;
-  const maxStake = agent.balance * (agent.max_exposure_pct / 100);
-  return Math.min(stake, maxStake);
-}
-
-// Reaction Latency: delays how long an agent takes to "see" a snapshot.
-// Instant = 0ms, Fast = 2000-5000ms, Delayed = 15000-30000ms; the exact
-// value lives in agent.reaction_latency_ms (validated in validateConfig.js).
-// Implementation: push every real-time snapshot onto a queue immediately,
-// but only return the oldest one once it's aged past reaction_latency_ms —
-// so the agent trades against a snapshot that's `reaction_latency_ms` stale,
-// simulating the delay between the real event and the agent noticing it.
-function applyReactionLatency(agent, snapshot) {
-  pendingSnapshots.push({ snapshot, seenAt: Date.now() });
-  const latencyMs = agent.reaction_latency_ms ?? 3000;
-
-  const now = Date.now();
-  let ready = null;
-  while (pendingSnapshots.length && now - pendingSnapshots[0].seenAt >= latencyMs) {
-    ready = pendingSnapshots.shift().snapshot;
-  }
-  return ready; // null if nothing has aged past the latency window yet
-}
-
-// Side Bias: nudges confidence up when the decision aligns with the agent's
-// declared side. Favorite/underdog is derived from the opening odds implied
-// probability (Pct) rather than the live odds, so the bias doesn't drift
-// mid-match as the market moves.
-// [FEED-SHAPE TBD]: `Participant1IsHome` / opening `Pct` aren't in the
-// current feed shape (see mockTxlineFeed.js / txline.js) — snapshots only
-// carry a numeric `odds` for whichever single market is active. This uses
-// the FIRST snapshot in `history` as a proxy for "opening odds" (lower
-// odds = favorite) and assumes home is Participant1, both of which should
-// be revisited once the real feed's participant/market fields are known.
-let openingOdds = null;
-let openingIsHomeFavorite = null;
-function applySideBias(agent, decision, history) {
-  const bias = agent.side_bias || 'none';
-  if (bias === 'none' || decision.action === 'hold') return decision;
-
-  if (openingOdds === null && history.length > 0) {
-    openingOdds = history[0].odds;
-    // odds < ~1.9 (even) implies favorite priced to win; treat 'buy' (home)
-    // as the favorite side when opening odds were short.
-    openingIsHomeFavorite = openingOdds < 1.9;
-  }
-
-  const backingHome = decision.action === 'buy';
-  let aligned = false;
-  if (bias === 'home') aligned = backingHome;
-  else if (bias === 'away') aligned = !backingHome;
-  else if (bias === 'favorite') aligned = backingHome === openingIsHomeFavorite;
-  else if (bias === 'underdog') aligned = backingHome !== openingIsHomeFavorite;
-
-  const adjustment = aligned ? 0.1 : -0.1;
-  return { ...decision, confidence: Math.max(0, Math.min(1, decision.confidence + adjustment)) };
-}
+// Side Bias: opening state tracked for applySideBiasPure + wildcard contrarian.
+let openingState = { openingOdds: null, openingIsHomeFavorite: null };
 
 // Context Awareness: reads venue/weather/competition-tier once at startup
 // and applies a flat confidence multiplier for the rest of the run if the
@@ -347,93 +202,22 @@ function applySideBias(agent, decision, history) {
 // optional FIXTURE_DETAILS env var / mock object until a real endpoint is
 // wired up, so the hook is in place without blocking on the feed work.
 async function loadContextAwareness(agent) {
-  if (!agent.context_venue_aware && !agent.context_weather_aware && !agent.context_competition_tier_aware) {
-    return { multiplier: 1 };
-  }
   // Placeholder fixture details source — replace with a real TxLINE fixture-details call.
-  fixtureDetails = process.env.MOCK_FIXTURE_DETAILS
+  const fd = process.env.MOCK_FIXTURE_DETAILS
     ? JSON.parse(process.env.MOCK_FIXTURE_DETAILS)
     : { venue: 'neutral', weather: 'clear', competitionTier: 'top' };
+  fixtureDetails = fd;
 
-  let multiplier = 1;
-  if (agent.context_venue_aware && fixtureDetails.venue === 'home_fortress') multiplier *= 1.1;
-  if (agent.context_weather_aware && ['rain', 'storm'].includes(fixtureDetails.weather)) multiplier *= 0.9;
-  if (agent.context_competition_tier_aware && fixtureDetails.competitionTier === 'lower') multiplier *= 0.85;
+  const multiplier = computeContextMultiplier(agent, fd);
   return { multiplier };
-}
-
-// Wildcard Traits: small dispatch table, applied last, after every other
-// filter/bias has already shaped `decision`.
-function applyWildcardTrait(agent, decision, snapshot) {
-  const trait = agent.wildcard_trait || 'none';
-  if (trait === 'none' || decision.action === 'hold') return decision;
-
-  switch (trait) {
-    case 'chaos_agent':
-      // Occasionally ignores its own model and trades on pure noise.
-      if (Math.random() < 0.15) {
-        return { ...decision, action: Math.random() < 0.5 ? 'buy' : 'sell', reason: 'chaos_agent:override' };
-      }
-      return decision;
-    case 'comeback_romantic': {
-      // Irrationally increases exposure to the trailing team as the game gets later.
-      if (snapshot.minute < 60) return decision;
-      const diff = (snapshot.score?.home ?? 0) - (snapshot.score?.away ?? 0);
-      if (diff === 0) return decision;
-      const trailingAction = diff > 0 ? 'sell' : 'buy'; // back the team that's behind
-      return { ...decision, action: trailingAction, confidence: Math.min(1, decision.confidence + 0.2), reason: 'comeback_romantic:trailing_side' };
-    }
-    case 'revenge_trader':
-      // After a losing trade, doubles down on the opposite side of its last call.
-      if (lastTradeResult === 'loss' && position === null) {
-        return { ...decision, action: decision.action === 'buy' ? 'sell' : 'buy', reason: 'revenge_trader:flip' };
-      }
-      return decision;
-    case 'superstition': {
-      // Lucky-number minute triggers an off-model trade regardless of signal.
-      const luckyMinute = agent.__luckyMinute ?? (agent.__luckyMinute = 7 + Math.floor(Math.random() * 80));
-      if (snapshot.minute === luckyMinute) {
-        return { ...decision, action: Math.random() < 0.5 ? 'buy' : 'sell', confidence: 0.9, reason: `superstition:minute_${luckyMinute}` };
-      }
-      return decision;
-    }
-    case 'weather_prophet': {
-      if (fixtureDetails && ['rain', 'storm'].includes(fixtureDetails.weather)) {
-        return { ...decision, confidence: Math.min(1, decision.confidence + 0.3), reason: `${decision.reason}+weather_prophet` };
-      }
-      return decision;
-    }
-    case 'bandwagon': {
-      // Copies whichever direction the market/odds are already moving, amplifying trends.
-      const recent = history.slice(-3).map((h) => h.odds);
-      if (recent.length < 2) return decision;
-      const trendingDown = recent[recent.length - 1] < recent[0]; // odds shortening = money on home
-      return { ...decision, action: trendingDown ? 'buy' : 'sell', reason: 'bandwagon:follow_trend' };
-    }
-    case 'contrarian': {
-      // Deliberately fades the crowd/market-implied favorite regardless of signal.
-      if (openingIsHomeFavorite === null) return decision;
-      return { ...decision, action: openingIsHomeFavorite ? 'sell' : 'buy', reason: 'contrarian:fade_favorite' };
-    }
-    case 'last_minute_believer':
-      // Dismisses everything before stoppage time; zeroes out phase.multiplier via the reason flag,
-      // actual gating happens in tick() by checking snapshot.minute directly (see tick() diff below).
-      return decision;
-    default:
-      return decision;
-  }
 }
 
 // L. Risk Ceiling: max drawdown stop halts the agent entirely once balance
 // has fallen more than max_drawdown_stop_pct off its peak.
 async function checkMaxDrawdownStop(agent) {
-  if (peakBalance === null) peakBalance = agent.balance;
-  peakBalance = Math.max(peakBalance, agent.balance);
-
-  if (agent.max_drawdown_stop_pct == null || peakBalance <= 0) return false;
-
-  const drawdownPct = ((peakBalance - agent.balance) / peakBalance) * 100;
-  if (drawdownPct >= agent.max_drawdown_stop_pct) {
+  const { halt, peakBalance: newPeak, drawdownPct } = computeDrawdownStop(agent, peakBalance);
+  peakBalance = newPeak;
+  if (halt) {
     log(`RISK CEILING: drawdown ${drawdownPct.toFixed(1)}% >= max ${agent.max_drawdown_stop_pct}%, halting agent.`);
     await updateRun({ status: 'stopped' });
     return true;
@@ -564,7 +348,8 @@ async function tick(agent) {
 
   // Reaction Latency: hold the snapshot in a queue until it's aged past
   // agent.reaction_latency_ms before the agent is allowed to act on it.
-  const snapshot = applyReactionLatency(agent, rawSnapshot);
+  const { ready: snapshot, pendingSnapshots: updatedQueue } = applyReactionLatencyPure(agent, rawSnapshot, pendingSnapshots);
+  pendingSnapshots = updatedQueue;
   if (!snapshot) return; // nothing has aged into the agent's reaction window yet
 
   history.push(snapshot);
@@ -596,12 +381,12 @@ async function tick(agent) {
 
     const exitRule = agent.exit_rule;
     if (exitRule === 'stop-loss' || exitRule === 'stop_loss_take_profit') {
-      const check = checkStopLossTakeProfit(agent, snapshot.odds);
+      const check = checkStopLossTakeProfit(position, agent, snapshot.odds);
       if (check.exit) {
         await closePosition(agent, snapshot, check.reason);
       }
     } else if (exitRule === 'time_based' && position) {
-      const check = checkTimeBasedExit(snapshot.minute);
+      const check = checkTimeBasedExit(position, snapshot.minute);
       if (check.exit) {
         await closePosition(agent, snapshot, check.reason);
       }
@@ -611,8 +396,19 @@ async function tick(agent) {
   let decision = evaluateSignal(agent, history);
 
   if (decision.action !== 'hold') {
-    decision = applySideBias(agent, decision, history);
-    decision = applyWildcardTrait(agent, decision, snapshot);
+    const sb = applySideBiasPure(agent, decision, history, openingState);
+    decision = sb.decision;
+    openingState = sb.openingState;
+    if ((agent.wildcard_trait || 'none') === 'superstition' && !agent.__luckyMinute) {
+      agent.__luckyMinute = 7 + Math.floor(Math.random() * 80);
+    }
+    decision = applyWildcardTraitPure(agent, decision, snapshot, history, {
+      lastTradeResult,
+      position,
+      openingIsHomeFavorite: openingState.openingIsHomeFavorite,
+      fixtureDetails,
+      luckyMinute: agent.__luckyMinute,
+    });
 
     // last_minute_believer: dismiss everything before stoppage time.
     if ((agent.wildcard_trait || 'none') === 'last_minute_believer' && snapshot.minute < 90) {
@@ -634,7 +430,7 @@ async function tick(agent) {
   // Open a new position if none is open (one position at a time, kept simple)
   if (!position) {
     // I. Re-entry Rule: stop opening new trades once the cap is reached.
-    if (agent.max_reentries != null && (agent.trade_count ?? 0) >= agent.max_reentries) {
+    if (reachedMaxReentries(agent)) {
       return;
     }
 
@@ -642,11 +438,12 @@ async function tick(agent) {
     const phase = getPhaseDecision(agent, snapshot);
     if (!phase.allow) return;
 
-    const gate = passesAggressionFilter(agent, decision, Date.now());
+    const gate = passesAggressionFilter(agent, decision, Date.now(), lastTradeAt, signalStreak);
     if (!gate.pass) {
       log(`skip open: ${gate.reason}`);
       return;
     }
+    signalStreak = gate.signalStreak;
 
     // Risk Profile: martingale reads the running loss streak and overrides
     // computeStake's normal position_sizing switch entirely (see
