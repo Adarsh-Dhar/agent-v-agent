@@ -41,6 +41,7 @@ let martingaleStreak = 0; // consecutive losses, used by risk_profile = 'marting
 let fixtureDetails = null; // loaded once at startup for Context Awareness
 let traderKeypair = null; // this run's on-chain wallet, loaded from agent.wallet_secret_key
 let nextTradeId = 0; // increments per open_position call; PDA nonce for this trader+market
+let matchEnded = false; // set by tick() when the feed reports the match is over; checked by main()'s poll loop
 
 function log(...args) {
   console.log(`[run ${runId}]`, ...args);
@@ -216,7 +217,7 @@ function checkTimeBasedExit(currentMinute) {
 
 // Aggression gate applied before opening a NEW position.
 // 'instant'      -> always passes
-// 'confirmation' -> requires 2+ consecutive ticks with the same signal direction
+// 'confirmation' -> requires confirmation_threshold+ consecutive ticks with the same signal direction
 // 'cooldown'     -> requires cooldown_minutes to have elapsed since the last trade
 function passesAggressionFilter(agent, decision, now) {
   const mode = agent.aggression || 'instant';
@@ -231,13 +232,14 @@ function passesAggressionFilter(agent, decision, now) {
   }
 
   if (mode === 'confirmation') {
+    const threshold = agent.confirmation_threshold ?? 2;
     if (signalStreak.action === decision.action) {
       signalStreak.count += 1;
     } else {
       signalStreak = { action: decision.action, count: 1 };
     }
-    if (signalStreak.count < 2) {
-      return { pass: false, reason: `awaiting_confirmation:${signalStreak.count}/2` };
+    if (signalStreak.count < threshold) {
+      return { pass: false, reason: `awaiting_confirmation:${signalStreak.count}/${threshold}` };
     }
     return { pass: true };
   }
@@ -507,8 +509,58 @@ async function maybeReflect(agent) {
   }
 }
 
+// Match end: close any open position at the final odds, mark this run and
+// the agent as 'completed' (not just 'stopped', so it's visually distinct
+// from a manual/risk-ceiling stop), flip the shared `matches` row to
+// 'completed', and push the final balance/pnl into match_players directly
+// so the leaderboard is correct even if nobody has the match page open at
+// the moment the match ends (the frontend's own sync only fires while
+// someone is polling GET /api/matches/:code).
+async function closeOutMatch(agent, snapshot) {
+  log(`match ended at minute=${snapshot.minute}, closing out.`);
+
+  if (position) {
+    await closePosition(agent, snapshot, 'match_ended');
+  }
+
+  await updateRun({ status: 'completed' });
+  await updateAgentMetrics(agent.agent_id, { status: 'completed' });
+
+  const { data: matchRow, error: matchErr } = await supabase
+    .from('matches')
+    .select('id')
+    .eq('agent_match_id', agent.match_id)
+    .maybeSingle();
+
+  if (matchErr) {
+    log('WARN: failed to look up matches row for completion:', matchErr.message);
+    return;
+  }
+  if (!matchRow) return; // not every match_id (e.g. ad-hoc/test runs) has a matches row
+
+  await supabase.from('matches').update({ status: 'completed', updated_at: new Date().toISOString() }).eq('id', matchRow.id);
+
+  const { error: playerErr } = await supabase
+    .from('match_players')
+    .update({ purse: agent.balance, pnl: agent.realized_pnl ?? 0 })
+    .eq('match_id', matchRow.id)
+    .eq('agent_id', agent.agent_id);
+  if (playerErr) log('WARN: failed to sync final purse/pnl to match_players:', playerErr.message);
+}
+
 async function tick(agent) {
   const rawSnapshot = await fetchOddsSnapshot(agent.match_id, agent);
+
+  // Match end (replay hit the last timeline tick, or live feed reported
+  // game_finalised): close out immediately on the raw snapshot rather than
+  // waiting for it to age through the reaction-latency queue, then signal
+  // the poll loop in main() to stop.
+  if (rawSnapshot.is_finished || rawSnapshot.matchEnded) {
+    await recordMatchTick(agent.match_id, rawSnapshot);
+    await closeOutMatch(agent, rawSnapshot);
+    matchEnded = true;
+    return;
+  }
 
   // Reaction Latency: hold the snapshot in a queue until it's aged past
   // agent.reaction_latency_ms before the agent is allowed to act on it.
@@ -596,8 +648,9 @@ async function tick(agent) {
       return;
     }
 
-    // Risk Profile: martingale reads the running loss streak; other profiles
-    // pass through to the existing position_sizing-derived computeStake.
+    // Risk Profile: martingale reads the running loss streak and overrides
+    // computeStake's normal position_sizing switch entirely (see
+    // strategyEngine.js). Other profiles pass through unchanged.
     const agentForStake =
       agent.risk_profile === 'martingale' ? { ...agent, __martingaleStreak: martingaleStreak } : agent;
     let stake =
@@ -680,6 +733,11 @@ async function main() {
         process.exit(0);
       }
       await tick(agent);
+      if (matchEnded) {
+        log('match completed, shutting down.');
+        clearInterval(interval);
+        process.exit(0);
+      }
     } catch (err) {
       log('ERROR during tick:', err.message);
       await updateRun({ status: 'error' });

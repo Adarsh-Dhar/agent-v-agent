@@ -91,6 +91,16 @@ export function evaluateSignal(agent, history) {
  * Computes stake size for a trade based on the sizing config columns.
  */
 export function computeStake(agent, balance, confidence) {
+  // Risk Profile: martingale overrides the normal sizing method entirely —
+  // it doubles the base stake per consecutive loss, regardless of which
+  // position_sizing type is also selected. Checked first, ahead of the
+  // sizing switch below.
+  if (agent.risk_profile === 'martingale') {
+    const base = agent.fixed_stake ?? 0.05;
+    const streak = agent.__martingaleStreak ?? 0;
+    return Math.min(base * Math.pow(2, streak), balance);
+  }
+
   const sizing = agent.position_sizing || 'fixed';
   switch (sizing) {
     case 'fixed':
@@ -103,16 +113,6 @@ export function computeStake(agent, balance, confidence) {
     case 'confidence_weighted': {
       const maxPct = (agent.percentage_stake ?? 20) / 100;
       return Math.min(balance * maxPct * confidence, balance);
-    }
-    case 'martingale': {
-      // Risk Profile: martingale — doubles the base stake per consecutive
-      // loss. lastResultStreak is threaded in by agentRunner.js (see §5);
-      // computeStake stays a pure function, so the streak is passed as a
-      // 3rd-ish input via agent.__martingaleStreak rather than closed-over
-      // module state, to keep this file side-effect free.
-      const base = agent.fixed_stake ?? 0.05;
-      const streak = agent.__martingaleStreak ?? 0;
-      return Math.min(base * Math.pow(2, streak), balance);
     }
     default:
       return 0;

@@ -254,6 +254,7 @@ export async function fetchReplaySnapshot(matchId) {
     timestamp: new Date().toISOString(),
     period: currentEvent.period,
     is_replay: true,
+    is_finished: state.isFinished,
   };
 }
 

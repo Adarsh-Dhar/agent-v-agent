@@ -167,8 +167,35 @@ app.post('/agents/:id/run', async (req, res) => {
     .from('agents').select('id').eq('id', req.params.id).single();
   if (agentErr) return res.status(404).json({ error: 'Agent not found' });
 
+  // Check if this is a replay match (format: replay-{fixture-id})
+  const isReplayMatch = match_id?.startsWith('replay-');
+
+  // Clean up ticks, trades, and ALL prior runs (active/error/stopped) from
+  // previous replays of this same fixture. Replay match_ids are reused
+  // across every "new match" that picks the demo fixture, so this MUST run
+  // before the existingRun guard below -- otherwise an orphaned 'active' row
+  // left behind by a crashed/killed agentRunner process gets picked up by
+  // the guard and the request short-circuits with 'already_running' before
+  // ever reaching this cleanup, leaving a dead run with stale balance/pnl
+  // and no live process ticking.
+  if (isReplayMatch) {
+    // match_ticks/match_clocks are shared across every player in the match;
+    // harmless to (re)clear once per player since agentRunner just
+    // re-inserts/re-derives them.
+    await supabase.from('match_ticks').delete().eq('match_id', match_id);
+    await resetMatchEpoch(match_id).catch(() => {});
+    // trades and agent_runs are per-agent -- scope the delete to THIS
+    // agent_id, or one player's cleanup would wipe another player's
+    // just-created run when startAgentRuns() fires one POST per player
+    // concurrently for the same match_id.
+    await supabase.from('trades').delete().eq('match_id', match_id).eq('agent_id', agent.id);
+    await supabase.from('agent_runs').delete().eq('match_id', match_id).eq('agent_id', agent.id);
+  }
+
   // Guard: if this agent already has an active run for this match, return it
   // instead of spawning a duplicate (prevents double-funding on reload/double-click).
+  // For replay matches this only ever matches a run created earlier in THIS
+  // same session, since the cleanup above just wiped out anything older.
   const { data: existingRun } = await supabase
     .from('agent_runs')
     .select('id, status')
@@ -179,18 +206,6 @@ app.post('/agents/:id/run', async (req, res) => {
 
   if (existingRun) {
     return res.status(200).json({ run_id: existingRun.id, agent_id: agent.id, status: 'already_running' });
-  }
-
-  // Check if this is a replay match (format: replay-{fixture-id})
-  const isReplayMatch = match_id?.startsWith('replay-');
-
-  // Clean up old ticks, trades, and stopped runs from previous replays
-  if (isReplayMatch) {
-    await supabase.from('match_ticks').delete().eq('match_id', match_id);
-    await supabase.from('trades').delete().eq('match_id', match_id);
-    await supabase.from('agent_runs').delete().eq('match_id', match_id).eq('status', 'stopped');
-    // Reset the shared match clock so the replay starts from minute 0
-    await resetMatchEpoch(match_id).catch(() => {});
   }
   
   // Fund a fresh devnet wallet for this run with budget_cap SOL,
