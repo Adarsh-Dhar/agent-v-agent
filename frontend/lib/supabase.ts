@@ -47,11 +47,7 @@ export type Agent = {
   wildcard_trait?: string
   phase_weighting?: string
   max_reentries?: number
-  reentry_rule?: string
   max_exposure_pct?: number
-  max_drawdown_stop_pct?: number
-  target_selection?: string
-  portfolio_behavior?: string
   volatility_threshold?: number
   volatility_timeframe?: number
   mean_reversion_threshold?: number

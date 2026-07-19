@@ -60,13 +60,12 @@ const FACTORS = {
   confirmation_tolerance: ['aggressive', 'conservative', 'adaptive'],
   score_state_mode: ['favor_chasing', 'favor_leading', 'momentum_only'],
   side_bias: ['home', 'away', 'favorite', 'underdog', 'none'],
-  risk_profile: ['conservative', 'aggressive', 'martingale', 'flat_stake'],
+  risk_profile: ['martingale', 'flat_stake'],
   position_sizing: ['fixed', 'percent_of_budget', 'confidence_weighted'],
   exit_rule: ['stop-loss', 'time_based', 'signal_reversal'],
   aggression: ['instant', 'confirmation', 'cooldown'],
   direction_bias: ['long_only', 'short_only', 'bidirectional'],
   phase_weighting: ['early', 'pre_halftime', 'second_half', 'late_stoppage', 'full_match'],
-  reentry_rule: ['no_reentry', 'immediate_reentry', 'capped_reentry'],
   wildcard_trait: ['none', 'chaos_agent', 'comeback_romantic', 'revenge_trader', 'superstition', 'weather_prophet', 'bandwagon', 'contrarian', 'last_minute_believer'],
 };
 const SCORE_STATE_EVENTS = ['goal_home', 'goal_away', 'red_card_away', 'red_card_home'];
@@ -102,9 +101,7 @@ function generateRandomConfig() {
   const aggression = randomChoice(FACTORS.aggression);
   const direction = randomChoice(FACTORS.direction_bias);
   const phaseWeighting = randomChoice(FACTORS.phase_weighting);
-  const reentryRule = randomChoice(FACTORS.reentry_rule);
-  const maxReentries =
-    reentryRule === 'no_reentry' ? 1 : reentryRule === 'immediate_reentry' ? null : randomInt(2, 10);
+  const maxReentries = randomInt(0, 10);
   const reactionLatency = randomInt(0, 30000);
   const wildcardTrait = randomChoice(FACTORS.wildcard_trait);
 
@@ -212,13 +209,7 @@ function generateAggressiveConfig() {
     ['second_half', 2],
     ['late_stoppage', 2],
   ]);
-  const reentryRule = weightedChoice([
-    ['immediate_reentry', 8],
-    ['capped_reentry', 2],
-    ['no_reentry', 0],
-  ]);
-  const maxReentries =
-    reentryRule === 'no_reentry' ? 1 : reentryRule === 'immediate_reentry' ? null : randomInt(3, 12);
+  const maxReentries = randomInt(3, 12);
 
   const config = {
     market_focus: '1x2', // aggressive profile defaults to 1x2 for simplicity
@@ -226,13 +217,12 @@ function generateAggressiveConfig() {
     confirmation_tolerance: 'aggressive',
     score_state_mode: 'momentum_only',
     side_bias: 'none',
-    risk_profile: 'aggressive',
+    risk_profile: 'flat_stake',
     position_sizing: sizing,
     exit_rule: exit,
     aggression,
     direction_bias: direction,
     phase_weighting: phaseWeighting,
-    reentry_rule: reentryRule,
     max_reentries: maxReentries,
     reaction_latency_ms: randomInt(0, 3000), // fast reaction for aggressive profile
     wildcard_trait: 'none',
@@ -342,13 +332,14 @@ function passesAggressionFilter(agent, decision, now) {
   }
 
   if (mode === 'confirmation') {
+    const threshold = agent.config.confirmation_threshold ?? 2;
     if (agent.signalStreak.action === decision.action) {
       agent.signalStreak.count += 1;
     } else {
       agent.signalStreak = { action: decision.action, count: 1 };
     }
-    if (agent.signalStreak.count < 2) {
-      return { pass: false, reason: `awaiting_confirmation:${agent.signalStreak.count}/2` };
+    if (agent.signalStreak.count < threshold) {
+      return { pass: false, reason: `awaiting_confirmation:${agent.signalStreak.count}/${threshold}` };
     }
     return { pass: true };
   }

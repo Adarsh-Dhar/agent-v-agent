@@ -40,12 +40,9 @@ export default function CreateAgentPage() {
     cooldown_minutes: 2,
     confirmation_threshold: 2,
     direction_bias: 'bidirectional' as ConfigOptions.Direction,
-    target_selection: 'both' as ConfigOptions.TargetSelection,
     phase_weighting: 'full_match' as ConfigOptions.PhaseWeighting,
     reaction_latency_ms: 3000,
-    reentry_rule: 'capped_reentry' as ConfigOptions.ReentryRule,
     max_reentries: 5,
-    portfolio_behavior: 'independent' as ConfigOptions.PortfolioBehavior,
     adaptivity_mode: 'static' as ConfigOptions.Adaptivity,
     context_venue_aware: false,
     context_weather_aware: false,
@@ -205,11 +202,8 @@ export default function CreateAgentPage() {
                 confirmation_threshold: 2,
               },
               direction: 'bidirectional',
-              target_selection: 'both',
               phase_weighting: preset.phaseWeighting,
-              reentry_rule: 'capped_reentry',
               max_reentries: 5,
-              portfolio_behavior: 'independent',
               adaptivity: 'static',
               ...(preset.decisionStyle === 'volatility_breakout' && {
                 volatility_window: preset.volatilityWindow,
@@ -277,12 +271,9 @@ export default function CreateAgentPage() {
                 confirmation_threshold: customConfig.confirmation_threshold,
               },
               direction: customConfig.direction_bias,
-              target_selection: customConfig.target_selection,
               phase_weighting: customConfig.phase_weighting,
               reaction_latency_ms: customConfig.reaction_latency_ms,
-              reentry_rule: customConfig.reentry_rule,
               max_reentries: customConfig.max_reentries,
-              portfolio_behavior: customConfig.portfolio_behavior,
               adaptivity: customConfig.adaptivity_mode,
               context_venue_aware: customConfig.context_venue_aware,
               context_weather_aware: customConfig.context_weather_aware,
@@ -805,20 +796,6 @@ export default function CreateAgentPage() {
                       ))}
                     </select>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Target Selection</label>
-                    <select
-                      value={customConfig.target_selection}
-                      onChange={(e) => setCustomConfig({ ...customConfig, target_selection: e.target.value as ConfigOptions.TargetSelection })}
-                      className="w-full px-4 py-2 rounded-lg bg-background border border-border focus:outline-none focus:ring-2 focus:ring-primary"
-                    >
-                      {ConfigOptions.TARGET_SELECTION.map((option) => (
-                        <option key={option} value={option}>
-                          {option.replace('_', ' ')}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
                 </div>
               </div>
 
@@ -863,48 +840,18 @@ export default function CreateAgentPage() {
                 <h3 className="text-lg font-semibold mb-4">Re-entry & Portfolio</h3>
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-sm font-medium mb-2">Re-entry Rule</label>
-                    <select
-                      value={customConfig.reentry_rule}
-                      onChange={(e) => setCustomConfig({ ...customConfig, reentry_rule: e.target.value as ConfigOptions.ReentryRule })}
+                    <label className="block text-sm font-medium mb-2">Max Reentries (0-20)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="20"
+                      value={customConfig.max_reentries}
+                      onChange={(e) => setCustomConfig({ ...customConfig, max_reentries: parseInt(e.target.value) || 5 })}
                       className="w-full px-4 py-2 rounded-lg bg-background border border-border focus:outline-none focus:ring-2 focus:ring-primary"
-                    >
-                      {ConfigOptions.REENTRY_RULE.map((option) => (
-                        <option key={option} value={option}>
-                          {option.replace('_', ' ')}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  {customConfig.reentry_rule !== 'no_reentry' && (
-                    <div>
-                      <label className="block text-sm font-medium mb-2">Max Reentries (0-20)</label>
-                      <input
-                        type="number"
-                        min="0"
-                        max="20"
-                        value={customConfig.max_reentries}
-                        onChange={(e) => setCustomConfig({ ...customConfig, max_reentries: parseInt(e.target.value) || 5 })}
-                        className="w-full px-4 py-2 rounded-lg bg-background border border-border focus:outline-none focus:ring-2 focus:ring-primary"
-                      />
-                      {validationErrors.max_reentries && (
-                        <p className="text-xs text-red-500 mt-1">{validationErrors.max_reentries}</p>
-                      )}
-                    </div>
-                  )}
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Portfolio Behavior</label>
-                    <select
-                      value={customConfig.portfolio_behavior}
-                      onChange={(e) => setCustomConfig({ ...customConfig, portfolio_behavior: e.target.value as ConfigOptions.PortfolioBehavior })}
-                      className="w-full px-4 py-2 rounded-lg bg-background border border-border focus:outline-none focus:ring-2 focus:ring-primary"
-                    >
-                      {ConfigOptions.PORTFOLIO_BEHAVIOR.map((option) => (
-                        <option key={option} value={option}>
-                          {option.replace('_', ' ')}
-                        </option>
-                      ))}
-                    </select>
+                    />
+                    {validationErrors.max_reentries && (
+                      <p className="text-xs text-red-500 mt-1">{validationErrors.max_reentries}</p>
+                    )}
                   </div>
                 </div>
               </div>

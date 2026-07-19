@@ -340,9 +340,9 @@ function generateAggressiveConfig() {
   const exit = randomChoice(['signal_reversal', 'stop-loss', 'time_based']);
   return {
     market_focus: MARKET_FOCUS, decision_style: decisionStyle, confirmation_tolerance: 'aggressive',
-    score_state_mode: 'momentum_only', side_bias: 'none', risk_profile: 'aggressive',
+    score_state_mode: 'momentum_only', side_bias: 'none', risk_profile: 'flat_stake',
     position_sizing: sizing, exit_rule: exit, aggression: 'instant', direction_bias: 'bidirectional',
-    phase_weighting: 'full_match', reentry_rule: 'immediate_reentry', max_reentries: null,
+    phase_weighting: 'full_match', max_reentries: 10,
     reaction_latency_ms: 0, wildcard_trait: 'none',
     max_exposure_pct: randomInt(25, 50), max_drawdown_stop_pct: randomInt(25, 50),
     percentage_stake: randomInt(12, 25), fixed_stake: (Math.random() * 0.09 + 0.01).toFixed(4),

@@ -14,7 +14,7 @@ const sampleAgent = {
     confirmation_tolerance: "adaptive",
     score_state_mode: "momentum_only",
     side_bias: "none",
-    risk_profile: "aggressive",
+    risk_profile: "flat_stake",
     reaction_latency_ms: 3000,
     context_venue_aware: false,
     context_weather_aware: false,
@@ -38,11 +38,8 @@ const sampleAgent = {
       confirmation_threshold: 2
     },
     direction: "bidirectional",
-    target_selection: "both",
     phase_weighting: "full_match",
-    reentry_rule: "capped_reentry",
     max_reentries: 3,
-    portfolio_behavior: "independent",
     adaptivity: "static",
     risk_ceiling: {
       max_exposure_pct: 30,

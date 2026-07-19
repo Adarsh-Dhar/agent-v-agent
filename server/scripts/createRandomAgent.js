@@ -16,7 +16,7 @@ const FACTORS = {
   confirmation_tolerance: ['aggressive', 'conservative', 'adaptive'],
   score_state_mode: ['favor_chasing', 'favor_leading', 'momentum_only'],
   side_bias: ['home', 'away', 'favorite', 'underdog', 'none'],
-  risk_profile: ['conservative', 'aggressive', 'martingale', 'flat_stake'],
+  risk_profile: ['martingale', 'flat_stake'],
   position_sizing: [
     'fixed',
     'percent_of_budget',
@@ -112,14 +112,9 @@ function generateRandomConfig() {
   console.log(`🔄 Adaptivity Mode: ${adaptivity}`);
 
   const phaseWeighting = randomChoice(FACTORS.phase_weighting);
-  const reentryRule = randomChoice(FACTORS.reentry_rule);
-  // Derive the numeric cap the runner actually enforces from the chosen rule.
-  const maxReentries =
-    reentryRule === 'no_reentry' ? 1 :
-    reentryRule === 'immediate_reentry' ? null :
-    randomInt(2, 10); // capped_reentry
+  const maxReentries = randomInt(0, 10);
   console.log(`⏱️  Match-Phase Weighting: ${phaseWeighting}`);
-  console.log(`♻️  Re-entry Rule: ${reentryRule} (max_reentries: ${maxReentries ?? 'unlimited'})`);
+  console.log(`♻️  Max Reentries: ${maxReentries}`);
 
   const reactionLatency = randomInt(0, 30000);
   console.log(`⏱️  Reaction Latency: ${reactionLatency}ms`);
@@ -146,7 +141,6 @@ function generateRandomConfig() {
     direction_bias: direction,
     adaptivity_mode: adaptivity,
     phase_weighting: phaseWeighting,
-    reentry_rule: reentryRule,
     max_reentries: maxReentries,
     reaction_latency_ms: reactionLatency,
     wildcard_trait: wildcardTrait,
@@ -241,11 +235,8 @@ async function createAndRunAgent(matchId, budgetCap) {
         confirmation_threshold: config.confirmation_threshold || 2
       },
       direction: config.direction_bias,
-      target_selection: config.target_selection || 'both',
       phase_weighting: config.phase_weighting,
-      reentry_rule: config.reentry_rule,
       max_reentries: config.max_reentries,
-      portfolio_behavior: config.portfolio_behavior || 'independent',
       adaptivity: config.adaptivity_mode,
       risk_ceiling: {
         max_exposure_pct: config.max_exposure_pct,

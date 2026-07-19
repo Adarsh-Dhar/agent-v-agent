@@ -6,7 +6,7 @@ const DECISION_STYLE = ['volatility_breakout'];
 const CONFIRMATION_TOLERANCE = ['aggressive', 'conservative', 'adaptive'];
 const SCORE_STATE_MODE = ['favor_chasing', 'favor_leading', 'momentum_only'];
 const SIDE_BIAS = ['home', 'away', 'favorite', 'underdog', 'none'];
-const RISK_PROFILE = ['conservative', 'aggressive', 'martingale', 'flat_stake'];
+const RISK_PROFILE = ['martingale', 'flat_stake'];
 const WILDCARD_TRAIT = [
   'none', 'chaos_agent', 'comeback_romantic', 'revenge_trader', 'superstition',
   'weather_prophet', 'bandwagon', 'contrarian', 'last_minute_believer',
@@ -16,10 +16,7 @@ const SIZING = ['fixed', 'percent_of_budget', 'percentage', 'confidence_weighted
 const EXIT = ['stop_loss_take_profit', 'stop-loss', 'time_based', 'signal_reversal'];
 const AGGRESSION = ['instant', 'confirmation', 'cooldown'];
 const DIRECTION = ['long_only', 'short_only', 'bidirectional'];
-const TARGET_SELECTION = ['favorite_only', 'underdog_only', 'first_trigger', 'both'];
 const PHASE_WEIGHTING = ['early', 'pre_halftime', 'second_half', 'late_stoppage', 'full_match'];
-const REENTRY_RULE = ['no_reentry', 'immediate_reentry', 'capped_reentry'];
-const PORTFOLIO_BEHAVIOR = ['independent', 'shared_bankroll', 'correlated_hedging'];
 const ADAPTIVITY = ['static', 'self_adjusting', 'llm_reflective'];
 
 /**
@@ -46,10 +43,7 @@ export function validateAgentConfig(body) {
   const exitType = cfg.exit?.type || body.exit_rule;
   const aggressionType = cfg.aggression?.type || body.aggression;
   const direction = cfg.direction || body.direction_bias;
-  const targetSelection = cfg.target_selection || body.target_selection;
   const phaseWeighting = cfg.phase_weighting || body.phase_weighting;
-  const reentryRule = cfg.reentry_rule || body.reentry_rule;
-  const portfolioBehavior = cfg.portfolio_behavior || body.portfolio_behavior;
   const adaptivity = body.adaptivity_mode || cfg.adaptivity;
 
   if (marketFocus && !MARKET_FOCUS.includes(marketFocus)) {
@@ -96,20 +90,8 @@ export function validateAgentConfig(body) {
     errors.push(`direction_bias must be one of: ${DIRECTION.join(', ')} (or omitted)`);
   }
 
-  if (targetSelection && !TARGET_SELECTION.includes(targetSelection)) {
-    errors.push(`target_selection must be one of: ${TARGET_SELECTION.join(', ')}`);
-  }
-
   if (phaseWeighting && !PHASE_WEIGHTING.includes(phaseWeighting)) {
     errors.push(`phase_weighting must be one of: ${PHASE_WEIGHTING.join(', ')}`);
-  }
-
-  if (reentryRule && !REENTRY_RULE.includes(reentryRule)) {
-    errors.push(`reentry_rule must be one of: ${REENTRY_RULE.join(', ')}`);
-  }
-
-  if (portfolioBehavior && !PORTFOLIO_BEHAVIOR.includes(portfolioBehavior)) {
-    errors.push(`portfolio_behavior must be one of: ${PORTFOLIO_BEHAVIOR.join(', ')}`);
   }
 
   if (adaptivity && !ADAPTIVITY.includes(adaptivity)) {

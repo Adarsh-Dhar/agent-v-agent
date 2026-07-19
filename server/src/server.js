@@ -57,11 +57,8 @@ app.use(express.json());
  *       "confirmation_threshold": 2
  *     },
  *     "direction": "bidirectional",
- *     "target_selection": "both",
  *     "phase_weighting": "full_match",
- *     "reentry_rule": "capped_reentry",
  *     "max_reentries": 5,
- *     "portfolio_behavior": "independent",
  *     "adaptivity": "static",
  *     "risk_ceiling": {
  *       "max_exposure_pct": null,
@@ -112,11 +109,8 @@ app.post('/agents', async (req, res) => {
     cooldown_minutes: config?.aggression?.cooldown_minutes || 2,
     confirmation_threshold: config?.aggression?.confirmation_threshold || 2,
     direction_bias: config?.direction || 'bidirectional',
-    target_selection: config?.target_selection || 'both',
     phase_weighting: config?.phase_weighting || 'full_match',
-    reentry_rule: config?.reentry_rule || 'capped_reentry',
     max_reentries: config?.max_reentries || 5,
-    portfolio_behavior: config?.portfolio_behavior || 'independent',
     adaptivity_mode: config?.adaptivity || 'static',
     llm_reflection_enabled: config?.adaptivity === 'llm_reflective',
     max_exposure_pct: config?.risk_ceiling?.max_exposure_pct || null,

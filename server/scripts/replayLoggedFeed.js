@@ -182,9 +182,9 @@ function generateAggressiveConfig() {
   return {
     market_focus: argVal('market-focus', '1x2'), decision_style: decisionStyle,
     confirmation_tolerance: 'aggressive', score_state_mode: 'momentum_only', side_bias: 'none',
-    risk_profile: 'aggressive', position_sizing: sizing, exit_rule: exit, aggression: 'instant',
-    direction_bias: 'bidirectional', phase_weighting: 'full_match', reentry_rule: 'immediate_reentry',
-    max_reentries: null, reaction_latency_ms: 0, wildcard_trait: 'none',
+    risk_profile: 'flat_stake', position_sizing: sizing, exit_rule: exit, aggression: 'instant',
+    direction_bias: 'bidirectional', phase_weighting: 'full_match',
+    max_reentries: 10, reaction_latency_ms: 0, wildcard_trait: 'none',
     max_exposure_pct: randomInt(25, 50), max_drawdown_stop_pct: randomInt(25, 50),
     percentage_stake: randomInt(12, 25), fixed_stake: (Math.random() * 0.09 + 0.01).toFixed(4),
     stop_loss: randomInt(3, 10), take_profit: randomInt(10, 25),
@@ -241,9 +241,10 @@ function passesAggressionFilter(agent, decision, now) {
     return { pass: true };
   }
   if (mode === 'confirmation') {
+    const threshold = agent.config.confirmation_threshold ?? 2;
     if (agent.signalStreak.action === decision.action) agent.signalStreak.count += 1;
     else agent.signalStreak = { action: decision.action, count: 1 };
-    if (agent.signalStreak.count < 2) return { pass: false, reason: `awaiting_confirmation:${agent.signalStreak.count}/2` };
+    if (agent.signalStreak.count < threshold) return { pass: false, reason: `awaiting_confirmation:${agent.signalStreak.count}/${threshold}` };
     return { pass: true };
   }
   return { pass: true };
