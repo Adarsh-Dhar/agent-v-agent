@@ -25,7 +25,6 @@ export default function CreateAgentPage() {
     ah_line_band: 'tight' as ConfigOptions.AhLineBand,
     ou_line_band: 'mid' as ConfigOptions.OuLineBand,
     decision_style: 'volatility_breakout' as ConfigOptions.DecisionStyle,
-    confirmation_tolerance: 'adaptive' as ConfigOptions.ConfirmationTolerance,
     score_state_mode: 'momentum_only' as ConfigOptions.ScoreStateMode,
     side_bias: 'none' as ConfigOptions.SideBias,
     risk_profile: 'flat_stake' as ConfigOptions.RiskProfile,
@@ -179,7 +178,6 @@ export default function CreateAgentPage() {
               description: preset.description,
               market_focus: preset.marketFocus,
               decision_style: preset.decisionStyle,
-              confirmation_tolerance: preset.confirmationTolerance,
               side_bias: preset.sideBias,
               reaction_latency_ms: preset.reactionLatencyMs,
               context_venue_aware: preset.contextVenueAware,
@@ -249,7 +247,6 @@ export default function CreateAgentPage() {
               ah_line_band: customConfig.market_focus === 'asian_handicap' ? customConfig.ah_line_band : undefined,
               ou_line_band: customConfig.market_focus === 'over_under' ? customConfig.ou_line_band : undefined,
               decision_style: customConfig.decision_style,
-              confirmation_tolerance: customConfig.confirmation_tolerance,
               score_state_mode: customConfig.score_state_mode,
               side_bias: customConfig.side_bias,
               risk_profile: customConfig.risk_profile,
@@ -278,8 +275,10 @@ export default function CreateAgentPage() {
               context_venue_aware: customConfig.context_venue_aware,
               context_weather_aware: customConfig.context_weather_aware,
               context_competition_tier_aware: customConfig.context_competition_tier_aware,
-              max_exposure_pct: customConfig.max_exposure_pct,
-              max_drawdown_stop_pct: customConfig.max_drawdown_stop_pct,
+              risk_ceiling: {
+                max_exposure_pct: customConfig.max_exposure_pct,
+                max_drawdown_stop_pct: customConfig.max_drawdown_stop_pct,
+              },
               ...(customConfig.decision_style === 'volatility_breakout' && {
                 volatility_window: customConfig.volatility_window,
                 breakout_zscore: customConfig.breakout_zscore,
@@ -535,24 +534,10 @@ export default function CreateAgentPage() {
                 </div>
               </div>
 
-              {/* Confirmation & Score-State */}
+              {/* Score-State */}
               <div className="bg-card rounded-lg p-6 border border-border">
-                <h3 className="text-lg font-semibold mb-4">Confirmation & Score-State</h3>
+                <h3 className="text-lg font-semibold mb-4">Score-State</h3>
                 <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Confirmation Tolerance</label>
-                    <select
-                      value={customConfig.confirmation_tolerance}
-                      onChange={(e) => setCustomConfig({ ...customConfig, confirmation_tolerance: e.target.value as ConfigOptions.ConfirmationTolerance })}
-                      className="w-full px-4 py-2 rounded-lg bg-background border border-border focus:outline-none focus:ring-2 focus:ring-primary"
-                    >
-                      {ConfigOptions.CONFIRMATION_TOLERANCE.map((option) => (
-                        <option key={option} value={option}>
-                          {option}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
                   <div>
                     <label className="block text-sm font-medium mb-2">Score State Mode</label>
                     <select

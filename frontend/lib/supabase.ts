@@ -36,7 +36,6 @@ export type Agent = {
   ah_line_band?: string
   ou_line_band?: string
   decision_style?: string
-  confirmation_tolerance?: string
   score_state_mode?: string
   side_bias?: string
   risk_profile?: string

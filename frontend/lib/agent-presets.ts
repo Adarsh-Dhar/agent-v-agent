@@ -5,7 +5,6 @@ export interface AgentPreset {
   marketFocus: '1x2' | 'asian_handicap' | 'over_under' | 'multi_market'
   decisionStyle: 'volatility_breakout'
   aggressionType: 'instant' | 'confirmation' | 'cooldown'
-  confirmationTolerance: 'aggressive' | 'conservative' | 'adaptive'
   phaseWeighting: 'early' | 'pre_halftime' | 'second_half' | 'late_stoppage' | 'full_match'
   sideBias: 'home' | 'away' | 'favorite' | 'underdog' | 'none'
   positionSizing: 'fixed' | 'percentage' | 'confidence_weighted'
@@ -25,7 +24,6 @@ export const AGENT_PRESETS: AgentPreset[] = [
     marketFocus: '1x2',
     decisionStyle: 'volatility_breakout',
     aggressionType: 'cooldown',
-    confirmationTolerance: 'adaptive',
     phaseWeighting: 'second_half',
     sideBias: 'underdog',
     positionSizing: 'confidence_weighted',
@@ -41,7 +39,6 @@ export const AGENT_PRESETS: AgentPreset[] = [
     marketFocus: '1x2',
     decisionStyle: 'volatility_breakout',
     aggressionType: 'instant',
-    confirmationTolerance: 'aggressive',
     phaseWeighting: 'full_match',
     sideBias: 'none',
     positionSizing: 'fixed',
@@ -53,11 +50,10 @@ export const AGENT_PRESETS: AgentPreset[] = [
   {
     id: 'contrarian-specialist',
     name: 'Contrarian Specialist',
-    description: 'Takes opposite positions to consensus - thrives in unexpected situations',
+    description: 'Takes opposite positions to consensus - also factors in venue and weather conditions',
     marketFocus: 'multi_market',
     decisionStyle: 'volatility_breakout',
     aggressionType: 'confirmation',
-    confirmationTolerance: 'conservative',
     phaseWeighting: 'early',
     sideBias: 'none',
     positionSizing: 'percentage',
@@ -69,11 +65,10 @@ export const AGENT_PRESETS: AgentPreset[] = [
   {
     id: 'last-minute-believer',
     name: 'Last Minute Believer',
-    description: 'Only activates in final 15 minutes with high-conviction trades',
+    description: 'Only activates in stoppage time (minute 90+) with high-conviction trades',
     marketFocus: '1x2',
     decisionStyle: 'volatility_breakout',
     aggressionType: 'instant',
-    confirmationTolerance: 'aggressive',
     phaseWeighting: 'late_stoppage',
     sideBias: 'none',
     positionSizing: 'fixed',
@@ -89,7 +84,6 @@ export const AGENT_PRESETS: AgentPreset[] = [
     marketFocus: 'over_under',
     decisionStyle: 'volatility_breakout',
     aggressionType: 'confirmation',
-    confirmationTolerance: 'conservative',
     phaseWeighting: 'full_match',
     sideBias: 'none',
     positionSizing: 'confidence_weighted',
@@ -105,7 +99,6 @@ export const AGENT_PRESETS: AgentPreset[] = [
     marketFocus: '1x2',
     decisionStyle: 'volatility_breakout',
     aggressionType: 'instant',
-    confirmationTolerance: 'aggressive',
     phaseWeighting: 'full_match',
     sideBias: 'none',
     positionSizing: 'confidence_weighted',
