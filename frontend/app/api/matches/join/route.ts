@@ -88,7 +88,7 @@ export async function POST(request: NextRequest) {
         match_id: matchData.id,
         player_id: userIdCookie,
         player_name: userNameCookie,
-        purse: matchData.initial_purse || 1000,
+        purse: matchData.initial_purse || 1,
       })
       .select()
 

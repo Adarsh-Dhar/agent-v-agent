@@ -5,6 +5,7 @@ import { Loader } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect } from 'react'
+import { formatSol } from '@/lib/currency'
 
 export default function DashboardPage() {
   const router = useRouter()
@@ -99,7 +100,7 @@ export default function DashboardPage() {
                 <div className="glass-card p-8 border-primary/20 hover:border-primary/50 transition-all">
                   <p className="text-sm text-muted-foreground mb-2 uppercase tracking-wider">Total P&L</p>
                   <p className={`text-4xl font-bold ${player.total_pnl >= 0 ? 'gradient-text' : 'text-destructive'}`}>
-                    ${player.total_pnl.toLocaleString()}
+                    {formatSol(player.total_pnl)}
                   </p>
                   <p className="text-xs text-muted-foreground mt-3">{player.total_pnl >= 0 ? 'Profit' : 'Loss'} accumulated</p>
                 </div>
@@ -153,17 +154,17 @@ export default function DashboardPage() {
             {/* Feature 3: Analytics */}
             <div className="glass-card p-8 flex flex-col hover:border-primary/50 hover:shadow-lg hover:shadow-primary/20 transition-all group">
               <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-primary to-secondary flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                <span className="text-xl">📊</span>
+                <span className="text-xl">🏆</span>
               </div>
-              <h3 className="text-xl font-bold text-foreground mb-3">Real-Time Analytics</h3>
+              <h3 className="text-xl font-bold text-foreground mb-3">Leaderboard</h3>
               <p className="text-muted-foreground mb-6 flex-grow">
-                Monitor agent performance with advanced charts, metrics, and detailed trade analysis in every match
+                See how you stack up against other traders with global rankings and ROI tracking
               </p>
               <Link
-                href="/matches"
+                href="/leaderboard"
                 className="inline-flex items-center gap-2 text-primary hover:text-secondary transition-colors font-semibold"
               >
-                View Analytics <span>→</span>
+                View Rankings <span>→</span>
               </Link>
             </div>
           </div>
@@ -182,10 +183,10 @@ export default function DashboardPage() {
                 Create First Agent
               </Link>
               <Link
-                href="/matches"
+                href="/leaderboard"
                 className="px-8 py-3 border border-primary/50 text-primary rounded-lg font-semibold hover:bg-primary/10 transition-all"
               >
-                Browse Matches
+                Leaderboard
               </Link>
             </div>
           </div>

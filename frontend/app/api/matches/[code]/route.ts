@@ -122,12 +122,18 @@ export async function GET(
           agentData = agent
         }
 
-        // Fetch trades using run_id if available, otherwise fall back to agent_id
-        const { data: trades, error: tradesErr } = await supabaseAdmin
+        // Fetch trades using run_id if available, otherwise filter by agent_id and match_id
+        const tradeQuery = supabaseAdmin
           .from('trades')
-          .select('side, odds, stake, reason, pnl, balance_after, tx_signature, created_at')
-          .eq(agentRun ? 'run_id' : 'agent_id', agentRun ? agentRun.id : player.agent_id)
-          .order('created_at', { ascending: true })
+          .select('side, odds, stake, reason, pnl, balance_after, tx_signature, created_at, match_minute')
+        
+        if (agentRun) {
+          tradeQuery.eq('run_id', agentRun.id)
+        } else {
+          tradeQuery.eq('agent_id', player.agent_id).eq('match_id', matchIdForAgents)
+        }
+        
+        const { data: trades, error: tradesErr } = await tradeQuery.order('created_at', { ascending: true })
 
         if (tradesErr) console.error('[v0] trades lookup failed for agent_id=', player.agent_id, tradesErr.message)
 
@@ -137,6 +143,24 @@ export async function GET(
     )
 
     console.log('[v0] Fetched players for match', match.id, ':', enrichedPlayers)
+
+    // Fire-and-forget: sync live PnL + purse back to match_players
+    // so the leaderboard can query match_players directly.
+    for (const ep of enrichedPlayers) {
+      if (!ep.agent) continue
+      const newPurse = ep.agent.balance ?? ep.purse
+      const newPnl = ep.agent.realized_pnl ?? 0
+      if (newPurse !== ep.purse || newPnl !== ep.pnl) {
+        Promise.resolve(
+          supabaseAdmin
+            .from('match_players')
+            .update({ purse: newPurse, pnl: newPnl })
+            .eq('match_id', match.id)
+            .eq('player_id', ep.player_id)
+        ).catch(() => {})
+      }
+    }
+
     return NextResponse.json({ match, players: enrichedPlayers }, { status: 200 })
   } catch (error) {
     console.error('[v0] Error in GET /api/matches/[code]:', error)
@@ -317,9 +341,9 @@ export async function POST(
       )
     }
 
-    const purseAmount = firstPlayer?.initial_purse || 1000
+    const purseAmount = firstPlayer?.initial_purse || 1
 
-    if (!Number.isInteger(purseAmount) || purseAmount < 100) {
+    if (purseAmount < 0.1) {
       console.error('[v0] Invalid purse amount:', purseAmount)
       return NextResponse.json(
         { error: 'Internal Server Error: Invalid match purse' },
@@ -465,7 +489,7 @@ export async function PATCH(
     // When stopping a match (status → pending), reset the match clock so the
     // next start gets a fresh replay epoch from minute 0.
     if (status === 'pending' && match.agent_match_id) {
-      await supabaseAdmin.from('match_clocks').delete().eq('match_id', match.agent_match_id).then(() => {}).catch(() => {})
+      await Promise.resolve(supabaseAdmin.from('match_clocks').delete().eq('match_id', match.agent_match_id)).catch(() => {})
     }
 
     return NextResponse.json({ match: updatedMatch }, { status: 200 })

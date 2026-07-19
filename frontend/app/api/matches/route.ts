@@ -93,7 +93,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const { title, description, max_players = 4, initial_purse = 1000, creator_agent_id, creator_agent_name, userId, creatorName, is_replay = false, fixture_id, home_team, away_team } = body
+    const { title, description, max_players = 4, initial_purse = 1, creator_agent_id, creator_agent_name, userId, creatorName, is_replay = false, fixture_id, home_team, away_team } = body
 
     // Validate required fields
     if (!title || typeof title !== 'string' || title.trim().length === 0) {
@@ -124,9 +124,9 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    if (!Number.isInteger(initial_purse) || initial_purse < 100 || initial_purse > 1000000) {
+    if (typeof initial_purse !== 'number' || initial_purse < 0.1 || initial_purse > 1000) {
       return NextResponse.json(
-        { error: 'Bad Request: Initial purse must be between 100 and 1,000,000' },
+        { error: 'Bad Request: Initial purse must be between 0.1 and 1,000 SOL' },
         { status: 400 }
       )
     }

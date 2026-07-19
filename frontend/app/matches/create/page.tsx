@@ -24,7 +24,7 @@ export default function CreateMatchPage() {
     title: '',
     description: '',
     max_players: '4',
-    initial_purse: '1000',
+    initial_purse: '1',
   })
   const [selectedAgent, setSelectedAgent] = useState<string>('')
   const [agents, setAgents] = useState<any[]>([])
@@ -108,9 +108,9 @@ export default function CreateMatchPage() {
       return
     }
 
-    const initialPurseNum = parseInt(formData.initial_purse)
-    if (!Number.isInteger(initialPurseNum) || initialPurseNum < 100 || initialPurseNum > 1000000) {
-      setError('Initial purse must be between 100 and 1,000,000')
+    const initialPurseNum = parseFloat(formData.initial_purse)
+    if (isNaN(initialPurseNum) || initialPurseNum < 0.1 || initialPurseNum > 1000) {
+      setError('Initial purse must be between 0.1 and 1,000 SOL')
       return
     }
 
@@ -301,13 +301,13 @@ export default function CreateMatchPage() {
                 name="initial_purse"
                 value={formData.initial_purse}
                 onChange={handleChange}
-                min="100"
-                step="100"
+                min="0.1"
+                step="0.1"
                 className="w-full px-4 py-2 bg-input border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                placeholder="Starting amount for each player"
+                placeholder="Starting amount in SOL for each player"
               />
               <p className="text-xs text-muted-foreground mt-1">
-                Each player will start with this amount. Default is $1,000.
+                Each player starts with this amount in SOL. Default is 1 SOL.
               </p>
             </div>
 

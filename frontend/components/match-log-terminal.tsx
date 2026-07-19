@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Terminal, Trophy } from 'lucide-react'
+import { formatSol } from '@/lib/currency'
 
 type Tick = {
   minute: number
@@ -27,7 +28,7 @@ type PlayerWithTrades = {
   player_name: string
   agent_name: string | null
   initial_purse?: number
-  agent?: { budget_cap?: number; realized_pnl?: number; unrealized_pnl?: number; trade_count?: number } | null
+  agent?: { budget_cap?: number; realized_pnl?: number; unrealized_pnl?: number; trade_count?: number; balance?: number } | null
   trades?: Trade[]
 }
 
@@ -74,16 +75,16 @@ function buildLines(ticks: Tick[], players: PlayerWithTrades[]): LogLine[] {
           key: `trade-${p.id}-${i}`,
           ts: tr.created_at,
           tone: side === 'buy' ? 'open-buy' : 'open-sell',
-          text: `[${label}] OPEN ${side} stake=${Number(tr.stake).toFixed(2)} @odds=${Number(tr.odds).toFixed(3)} reason=${tr.reason || '-'}`,
+          text: `[${label}] OPEN ${side} stake=${formatSol(Number(tr.stake))} @odds=${Number(tr.odds).toFixed(3)} reason=${tr.reason || '-'}`,
         })
       } else {
         const pnl = tr.pnl ?? 0
-        const bal = tr.balance_after != null ? Number(tr.balance_after).toFixed(2) : '?'
+        const bal = tr.balance_after != null ? formatSol(Number(tr.balance_after)) : '?'
         lines.push({
           key: `trade-${p.id}-${i}`,
           ts: tr.created_at,
           tone: pnl >= 0 ? 'close-win' : 'close-loss',
-          text: `[${label}] CLOSE ${side} stake=${Number(tr.stake).toFixed(2)} pnl=${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)} -> balance=${bal} reason=${tr.reason || '-'}`,
+          text: `[${label}] CLOSE ${side} stake=${formatSol(Number(tr.stake))} pnl=${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)} -> balance=${bal} reason=${tr.reason || '-'}`,
         })
       }
     })
@@ -116,14 +117,14 @@ function buildResultsTable(players: PlayerWithTrades[]) {
     const wins = closed.filter((t) => (t.pnl ?? 0) > 0).length
     const budgetCap = p.agent?.budget_cap ?? p.initial_purse ?? 1000
     const realizedPnl = p.agent?.realized_pnl ?? 0
-    const finalBalance = budgetCap + realizedPnl + (p.agent?.unrealized_pnl ?? 0)
+    const finalBalance = p.agent?.balance ?? (budgetCap + realizedPnl + (p.agent?.unrealized_pnl ?? 0))
     const roi = budgetCap ? ((finalBalance - budgetCap) / budgetCap) * 100 : 0
     return {
       name: p.agent_name || p.player_name,
       trades: p.agent?.trade_count ?? trades.filter((t) => !t.side?.startsWith('close_')).length,
       wins,
       winRate: closed.length ? `${Math.round((wins / closed.length) * 100)}%` : 'n/a',
-      finalBalance: finalBalance.toFixed(2),
+      finalBalance: formatSol(finalBalance),
       pnl: realizedPnl.toFixed(2),
       roi,
     }

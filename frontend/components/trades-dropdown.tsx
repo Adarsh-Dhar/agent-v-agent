@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { ChevronDown, ExternalLink } from 'lucide-react'
+import { formatSol } from '@/lib/currency'
 
 export type TradeRow = {
   side: string
@@ -12,6 +13,7 @@ export type TradeRow = {
   balance_after: number | null
   tx_signature: string | null
   created_at: string
+  match_minute: number | null
 }
 
 function isSimulatedSignature(sig: string | null) {
@@ -74,7 +76,7 @@ export default function TradesDropdown({ trades }: { trades: TradeRow[] }) {
                       <span className="text-xs text-muted-foreground">{fmtTime(t.created_at)}</span>
                     </div>
                     <div className="text-xs text-muted-foreground mt-0.5">
-                      stake=${Number(t.stake).toFixed(2)} @odds={Number(t.odds).toFixed(3)}
+                      stake={formatSol(Number(t.stake))} @odds={Number(t.odds).toFixed(3)}
                       {t.pnl != null && (
                         <span className={t.pnl >= 0 ? 'text-accent' : 'text-destructive'}>
                           {' '}pnl={t.pnl >= 0 ? '+' : ''}{t.pnl.toFixed(2)}

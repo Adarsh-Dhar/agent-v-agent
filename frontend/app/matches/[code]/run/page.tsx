@@ -9,6 +9,7 @@ import MatchOddsChart from '@/components/match-odds-chart'
 import MatchLogTerminal from '@/components/match-log-terminal'
 import { Loader, Play } from 'lucide-react'
 import { useAuth } from '@/app/providers'
+import { formatSol } from '@/lib/currency'
 import type { Match, MatchPlayer, Game } from '@/lib/supabase'
 
 export default function MatchRunPage({ params }: { params: Promise<{ code: string }> | { code: string } }) {
@@ -148,7 +149,7 @@ export default function MatchRunPage({ params }: { params: Promise<{ code: strin
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             match_id: matchIdForAgents,
-            budget_cap: (player.purse ?? 1000) / 1000,
+            budget_cap: player.purse ?? 1,
           }),
         })
         const runData = await runResponse.json()
@@ -282,15 +283,15 @@ export default function MatchRunPage({ params }: { params: Promise<{ code: strin
           <div className="flex flex-wrap gap-3 pt-4 border-t border-border/30">
             {players.map((p: any) => {
               const agent = p.agent
-              const budgetCap = agent?.budget_cap ?? p.initial_purse ?? 1000
+              const budgetCap = agent?.budget_cap ?? p.initial_purse ?? 1
               const realizedPnL = agent?.realized_pnl ?? 0
               const unrealizedPnL = agent?.unrealized_pnl ?? 0
-              const equity = budgetCap + realizedPnL + unrealizedPnL
+              const displayEquity = agent?.balance ?? p.purse ?? budgetCap
               return (
                 <div key={p.id} className="bg-background rounded-lg border border-border/30 px-4 py-2">
                   <span className="text-sm font-medium text-foreground">{p.player_name}</span>
                   <span className="text-xs text-muted-foreground ml-2">
-                    ${equity.toFixed(0)} ({realizedPnL >= 0 ? '+' : ''}{realizedPnL.toFixed(2)})
+                    {formatSol(displayEquity)} ({realizedPnL >= 0 ? '+' : ''}{realizedPnL.toFixed(2)})
                   </span>
                 </div>
               )
@@ -339,25 +340,25 @@ export default function MatchRunPage({ params }: { params: Promise<{ code: strin
         {showCharts && players.length > 0 && (
           <div className="mb-12">
             <h2 className="text-3xl font-bold gradient-text mb-8">Agent Performance</h2>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 gap-6">
               {players.map((player: any) => {
                 const agent = player.agent
                 const trades = player.trades || []
                 const budgetCap = agent?.budget_cap ?? player.initial_purse ?? 1000
                 const realizedPnL = agent?.realized_pnl ?? 0
                 const unrealizedPnL = agent?.unrealized_pnl ?? 0
-                const currentBalance = budgetCap + realizedPnL + unrealizedPnL
+                const currentBalance = agent?.balance ?? player.purse ?? budgetCap
                 const tradeCount = agent?.trade_count ?? trades.length
 
                 const chartData = trades.length > 0
                   ? trades.map((t: any, i: number) => ({
-                      timestamp: new Date(t.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                      minute: t.match_minute != null ? t.match_minute : i,
                       balance: t.balance_after != null
                         ? t.balance_after
                         : budgetCap + ((currentBalance - budgetCap) * (i + 1)) / trades.length,
                       odds: t.odds,
                     }))
-                  : [{ timestamp: '0:00', balance: currentBalance, odds: 1.5 }]
+                  : [{ minute: 0, balance: currentBalance, odds: 1.5 }]
 
                 return (
                   <AgentChart

@@ -5,6 +5,7 @@ import Link from 'next/link'
 import Header from '@/components/header'
 import { Search, Plus, Trash2, Loader } from 'lucide-react'
 import { useAuth } from '@/app/providers'
+import { formatSol } from '@/lib/currency'
 import type { Agent } from '@/lib/supabase'
 
 export default function AgentsPage() {
@@ -255,7 +256,7 @@ export default function AgentsPage() {
                           agent.realized_pnl >= 0 ? 'text-accent' : 'text-destructive'
                         }`}
                       >
-                        ${agent.realized_pnl.toLocaleString()}
+                        {formatSol(agent.realized_pnl)}
                       </span>
                     </div>
                     <div className="flex justify-between items-center pt-3 border-t border-border">

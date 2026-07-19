@@ -17,6 +17,7 @@ export default function Header() {
     { href: '/', label: 'Dashboard' },
     { href: '/agents', label: 'Agents' },
     { href: '/matches', label: 'Matches' },
+    { href: '/leaderboard', label: 'Leaderboard' },
   ]
 
   const handleSignOut = async () => {

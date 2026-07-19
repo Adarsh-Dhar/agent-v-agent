@@ -77,10 +77,9 @@ async function updateAgentMetrics(agentId, fields) {
 // actually traded on this tick. For live matches we encode seconds into
 // the minute field (minute*100+seconds) so every tick gets its own unique
 // row. The frontend decodes this back to the real minute for display.
-// For replay matches we use the real minute directly.
-// For live matches we encode seconds into the minute field (minute*100+seconds)
-// so every tick gets its own unique row. The frontend decodes this back to the
-// real minute for display.
+// For replay matches we use the real minute directly — duplicate minutes
+// are silently ignored (the match_ticks_replay_dedup partial index ensures
+// one row per replay minute).
 async function recordMatchTick(matchId, snapshot) {
   const isReplay = matchId?.startsWith('replay-');
 
@@ -96,10 +95,12 @@ async function recordMatchTick(matchId, snapshot) {
     score_away: snapshot.score?.away ?? null,
     event: snapshot.event ?? null,
   });
-  if (error) log('WARN: failed to record match tick:', error.message);
+  // Duplicate key errors are expected for replays (same minute inserted
+  // multiple times due to tick rate) — ignore them silently.
+  if (error && error.code !== '23505') log('WARN: failed to record match tick:', error.message);
 }
 
-async function recordTrade(agent, side, odds, stake, reason, pnl = null, balanceAfter = null, txSignature = null) {
+async function recordTrade(agent, side, odds, stake, reason, pnl = null, balanceAfter = null, txSignature = null, matchMinute = null) {
   const { error } = await supabase.from('trades').insert({
     agent_id: agent.agent_id,
     run_id: runId,
@@ -111,6 +112,7 @@ async function recordTrade(agent, side, odds, stake, reason, pnl = null, balance
     pnl,
     balance_after: balanceAfter,
     tx_signature: txSignature,
+    match_minute: matchMinute,
   });
   if (error) log('WARN: failed to record trade:', error.message);
 }
@@ -630,7 +632,7 @@ async function tick(agent) {
     const newBalance = await getWalletBalanceSol(traderKeypair.publicKey);
 
     log(`OPEN ${decision.action} stake=${stake.toFixed(4)} @odds=${snapshot.odds} balance=${newBalance.toFixed(4)} reason=${decision.reason} tx=${signature}`);
-    await recordTrade(agent, decision.action, snapshot.odds, stake, decision.reason, null, newBalance, signature);
+    await recordTrade(agent, decision.action, snapshot.odds, stake, decision.reason, null, newBalance, signature, snapshot.minute);
     await updateRun({ trade_count: newTradeCount, status: 'running', balance: newBalance });
     await updateAgentMetrics(agent.agent_id, {
       trade_count: newTradeCount,

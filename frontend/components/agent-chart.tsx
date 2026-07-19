@@ -4,10 +4,11 @@ import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
 import { TrendingUp, TrendingDown } from 'lucide-react'
 import StatPill from './stat-pill'
 import TradesDropdown, { type TradeRow } from './trades-dropdown'
+import { formatSol } from '@/lib/currency'
 
 interface AgentChartProps {
   title: string
-  data: Array<{ timestamp: string; balance: number; odds: number }>
+  data: Array<{ minute: number; balance: number; odds: number }>
   balance: number
   initialBalance: number
   realizedPnL: number
@@ -42,7 +43,7 @@ export default function AgentChart({
         
         {/* Stat Pills Row */}
         <div className="flex flex-wrap gap-3 mb-6">
-          <StatPill label="Balance" value={`$${balance.toLocaleString()}`} />
+          <StatPill label="Balance" value={formatSol(balance)} />
           <StatPill 
             label="Realized PnL" 
             value={`${realizedPnL >= 0 ? '+' : ''}${realizedPnL}`}
@@ -67,7 +68,7 @@ export default function AgentChart({
             </linearGradient>
           </defs>
           <CartesianGrid strokeDasharray="3 3" stroke="#2a2a3e" vertical={false} opacity={0.3} />
-          <XAxis dataKey="timestamp" stroke="#a1a1a1" style={{ fontSize: '12px' }} />
+          <XAxis dataKey="minute" stroke="#a1a1a1" style={{ fontSize: '12px' }} tickFormatter={(m) => `${m}'`} />
           <YAxis stroke="#a1a1a1" style={{ fontSize: '12px' }} />
           <Tooltip 
             contentStyle={{ 
@@ -78,7 +79,8 @@ export default function AgentChart({
               fontSize: '12px',
               boxShadow: '0 0 20px rgba(167, 139, 250, 0.3)'
             }}
-            formatter={(value) => `$${value.toLocaleString()}`}
+            formatter={(value) => formatSol(Number(value))}
+            labelFormatter={(m) => `Minute ${m}'`}
             labelStyle={{ color: '#e5e5e5' }}
           />
           <Area 

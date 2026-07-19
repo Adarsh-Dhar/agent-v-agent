@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import Header from '@/components/header'
 import { ArrowLeft, BarChart3, TrendingUp, Users, Loader } from 'lucide-react'
+import { formatSol } from '@/lib/currency'
 
 export default function AgentDetailPage({ params }: { params: Promise<{ id: string }> | { id: string } }) {
   const [agent, setAgent] = useState<any>(null)
@@ -109,7 +110,7 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
               <span className="text-sm font-medium text-muted-foreground">Balance</span>
               <BarChart3 className="w-4 h-4 text-primary" />
             </div>
-            <p className="text-2xl font-bold text-foreground">${(agent.balance || 0).toLocaleString()}</p>
+            <p className="text-2xl font-bold text-foreground">{formatSol(agent.balance || 0)}</p>
           </div>
 
           <div className="glass-card p-6">
@@ -117,7 +118,7 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
               <span className="text-sm font-medium text-muted-foreground">Budget Cap</span>
               <Users className="w-4 h-4 text-primary" />
             </div>
-            <p className="text-2xl font-bold text-foreground">${(agent.budget_cap || 0).toLocaleString()}</p>
+            <p className="text-2xl font-bold text-foreground">{formatSol(agent.budget_cap || 0)}</p>
           </div>
 
           <div className="glass-card p-6">
@@ -133,7 +134,7 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
               <span className="text-sm font-medium text-muted-foreground">Realized PnL</span>
               <TrendingUp className="w-4 h-4 text-accent" />
             </div>
-            <p className="text-2xl font-bold text-foreground">${(agent.realized_pnl || 0).toLocaleString()}</p>
+            <p className="text-2xl font-bold text-foreground">{formatSol(agent.realized_pnl || 0)}</p>
           </div>
         </div>
 
