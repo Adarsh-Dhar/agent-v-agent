@@ -117,7 +117,6 @@ function generateRandomConfig() {
     aggression,
     direction_bias: direction,
     phase_weighting: phaseWeighting,
-    reentry_rule: reentryRule,
     max_reentries: maxReentries,
     reaction_latency_ms: reactionLatency,
     wildcard_trait: wildcardTrait,

@@ -49,11 +49,6 @@ const FACTORS = {
     'late_stoppage',
     'full_match'
   ],
-  reentry_rule: [
-    'no_reentry',
-    'immediate_reentry',
-    'capped_reentry'
-  ],
   wildcard_trait: [
     'none',
     'chaos_agent',
