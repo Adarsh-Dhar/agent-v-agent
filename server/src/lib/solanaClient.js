@@ -160,6 +160,16 @@ export function solToLamports(sol) {
 /** Generates a fresh devnet wallet for a run and funds it with `solAmount`. */
 export async function createFundedRunWallet(solAmount) {
   const kp = Keypair.generate();
+  const needed = solToLamports(solAmount) + solToLamports(0.01); // pad for tx fees/rent
+  const balance = await connection.getBalance(authorityKeypair.publicKey, 'confirmed');
+  if (balance < needed) {
+    const availSol = (balance / LAMPORTS_PER_SOL).toFixed(4);
+    const needSol = (solAmount + 0.01).toFixed(2);
+    throw new Error(
+      `Authority wallet has only ${availSol} SOL but needs ${needSol} SOL to fund run wallet. ` +
+      `Airdrop more SOL: solana airdrop 5 ${authorityKeypair.publicKey.toBase58()} --url devnet`
+    );
+  }
   // Transfer from the authority wallet rather than requestAirdrop for each
   // agent -- devnet's airdrop faucet is rate-limited per IP and will start
   // failing fast if every new run tries to hit it directly.
@@ -167,7 +177,7 @@ export async function createFundedRunWallet(solAmount) {
     SystemProgram.transfer({
       fromPubkey: authorityKeypair.publicKey,
       toPubkey: kp.publicKey,
-      lamports: solToLamports(solAmount) + solToLamports(0.01), // pad for tx fees/rent
+      lamports: needed,
     })
   );
   const sig = await sendAndConfirmPolling(connection, tx, [authorityKeypair]);

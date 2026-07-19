@@ -110,16 +110,19 @@ export async function GET(
           console.error('[v0] agent_run lookup failed for agent_id=', player.agent_id, 'match_id=', matchIdForAgents, agentRunErr.message)
         }
 
-        // If no agent_run exists, fall back to agents table for static config
+        // If no agent_run exists, return clean defaults derived from the
+        // match_players row — NOT the agents table, which may hold stale
+        // balance/PnL from a completely different run.
         let agentData = agentRun
         if (!agentRun) {
-          const { data: agent, error: agentErr } = await supabaseAdmin
-            .from('agents')
-            .select('balance, realized_pnl, unrealized_pnl, trade_count, status, budget_cap')
-            .eq('id', player.agent_id)
-            .single()
-          if (agentErr) console.error('[v0] agent lookup failed for agent_id=', player.agent_id, agentErr.message)
-          agentData = agent
+          agentData = {
+            balance: player.initial_purse ?? player.purse ?? 0.001,
+            realized_pnl: 0,
+            unrealized_pnl: 0,
+            trade_count: 0,
+            status: 'pending',
+            budget_cap: player.initial_purse ?? player.purse ?? 0.001,
+          }
         }
 
         // Fetch trades using run_id if available, otherwise filter by agent_id and match_id
@@ -146,18 +149,34 @@ export async function GET(
 
     // Fire-and-forget: sync live PnL + purse back to match_players
     // so the leaderboard can query match_players directly.
-    for (const ep of enrichedPlayers) {
-      if (!ep.agent) continue
-      const newPurse = ep.agent.balance ?? ep.purse
-      const newPnl = ep.agent.realized_pnl ?? 0
-      if (newPurse !== ep.purse || newPnl !== ep.pnl) {
-        Promise.resolve(
-          supabaseAdmin
-            .from('match_players')
-            .update({ purse: newPurse, pnl: newPnl })
-            .eq('match_id', match.id)
-            .eq('player_id', ep.player_id)
-        ).catch(() => {})
+    // ONLY sync when we have a real agent_run (not the stale agents table
+    // fallback) to avoid overwriting initial_purse with old balances.
+    if (match.status === 'active') {
+      // Re-fetch which players have a live agent_run for this match
+      const matchIdForAgents = match.agent_match_id || match.id
+      const { data: activeRuns } = await supabaseAdmin
+        .from('agent_runs')
+        .select('agent_id, balance, realized_pnl')
+        .eq('match_id', matchIdForAgents)
+        .eq('status', 'active')
+
+      if (activeRuns) {
+        const runsByAgent = new Map(activeRuns.map(r => [r.agent_id, r]))
+        for (const ep of enrichedPlayers) {
+          const run = runsByAgent.get(ep.agent_id)
+          if (!run) continue  // no live run — don't touch the DB row
+          const newPurse = run.balance ?? ep.purse
+          const newPnl = run.realized_pnl ?? 0
+          if (newPurse !== ep.purse || newPnl !== ep.pnl) {
+            Promise.resolve(
+              supabaseAdmin
+                .from('match_players')
+                .update({ purse: newPurse, pnl: newPnl })
+                .eq('match_id', match.id)
+                .eq('player_id', ep.player_id)
+            ).catch(() => {})
+          }
+        }
       }
     }
 
@@ -263,6 +282,14 @@ export async function POST(
       )
     }
 
+    // Only allow joining when match is pending
+    if (match.status !== 'pending') {
+      return NextResponse.json(
+        { error: `Match is ${match.status} and can no longer be joined` },
+        { status: 400 }
+      )
+    }
+
     if (!match.id) {
       console.error('[v0] Match object missing id field:', match)
       return NextResponse.json(
@@ -325,25 +352,10 @@ export async function POST(
       )
     }
 
-    // Get match purse setting from first player (created with match)
-    const { data: firstPlayer, error: purseError } = await supabaseAdmin
-      .from('match_players')
-      .select('initial_purse')
-      .eq('match_id', match.id)
-      .limit(1)
-      .single()
+    // Get match purse setting directly from the match row
+    const purseAmount = match.initial_purse || 0.001
 
-    if (purseError && purseError.code !== 'PGRST116') {
-      console.error('[v0] Database error fetching purse:', purseError)
-      return NextResponse.json(
-        { error: 'Internal Server Error: Failed to fetch match purse' },
-        { status: 500 }
-      )
-    }
-
-    const purseAmount = firstPlayer?.initial_purse || 1
-
-    if (purseAmount < 0.1) {
+    if (purseAmount < 0.001) {
       console.error('[v0] Invalid purse amount:', purseAmount)
       return NextResponse.json(
         { error: 'Internal Server Error: Invalid match purse' },
@@ -486,10 +498,60 @@ export async function PATCH(
       )
     }
 
-    // When stopping a match (status → pending), reset the match clock so the
-    // next start gets a fresh replay epoch from minute 0.
-    if (status === 'pending' && match.agent_match_id) {
-      await Promise.resolve(supabaseAdmin.from('match_clocks').delete().eq('match_id', match.agent_match_id)).catch(() => {})
+    // When stopping a match (status → pending), clean up everything so the
+    // next start gets a completely fresh state.
+    if (status === 'pending') {
+      const matchIdForAgents = match.agent_match_id || match.id
+
+      // 1. Mark agent_runs as stopped (NOT delete) so the agentRunner
+      //    processes see status=stopped and exit cleanly via loadState().
+      Promise.resolve(supabaseAdmin.from('agent_runs').update({ status: 'stopped' }).eq('match_id', matchIdForAgents)).catch(() => {})
+      if (matchIdForAgents !== match.id) {
+        Promise.resolve(supabaseAdmin.from('agent_runs').update({ status: 'stopped' }).eq('match_id', match.id)).catch(() => {})
+      }
+
+      // 2. Delete trades for this match
+      await supabaseAdmin.from('trades').delete().eq('match_id', matchIdForAgents).catch(() => {})
+
+      // 3. Delete match_ticks and match_clocks
+      if (match.agent_match_id) {
+        await supabaseAdmin.from('match_clocks').delete().eq('match_id', match.agent_match_id).catch(() => {})
+      }
+      await supabaseAdmin.from('match_ticks').delete().eq('match_id', matchIdForAgents).catch(() => {})
+
+      // 4. Reset agents table balance/pnl so stale values don't leak back
+      const { data: playerAgents } = await supabaseAdmin
+        .from('match_players')
+        .select('agent_id')
+        .eq('match_id', match.id)
+      if (playerAgents) {
+        const agentIds = [...new Set(playerAgents.map((p: any) => p.agent_id).filter(Boolean))]
+        await Promise.all(
+          agentIds.map((id: string) =>
+            supabaseAdmin
+              .from('agents')
+              .update({ balance: null, realized_pnl: 0, unrealized_pnl: 0, trade_count: 0 })
+              .eq('id', id)
+              .catch(() => {})
+          )
+        )
+      }
+
+      // 5. Restore each player's purse to their initial_purse
+      const { data: playersToReset } = await supabaseAdmin
+        .from('match_players')
+        .select('id, initial_purse')
+        .eq('match_id', match.id)
+      if (playersToReset) {
+        await Promise.all(
+          playersToReset.map((p: any) =>
+            supabaseAdmin
+              .from('match_players')
+              .update({ purse: p.initial_purse, pnl: 0 })
+              .eq('id', p.id)
+          )
+        )
+      }
     }
 
     return NextResponse.json({ match: updatedMatch }, { status: 200 })
@@ -546,16 +608,13 @@ export async function DELETE(
 
     if (matchError && matchError.code !== 'PGRST116') {
       console.error('[v0] Database error fetching match:', matchError)
-      return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
     }
 
-    if (!match || matchError?.code === 'PGRST116') {
-      return NextResponse.json({ error: 'Not Found' }, { status: 404 })
-    }
-
-    // Verify user is the creator
-    if (match.creator_id !== userId) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    if (match) {
+      // Verify user is the creator
+      if (match.creator_id !== userId) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
     }
 
     // Delete all match_players first (due to foreign key constraint)
@@ -569,7 +628,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
     }
 
-    // Delete the match
+    // Delete the match (may not exist if orphaned)
     const { error: deleteError } = await supabaseAdmin
       .from('matches')
       .delete()

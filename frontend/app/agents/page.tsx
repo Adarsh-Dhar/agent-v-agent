@@ -69,8 +69,10 @@ export default function AgentsPage() {
   }
 
   const calculateROI = (agent: Agent) => {
-    if (agent.budget_cap === 0 || agent.balance === 0 || agent.trade_count === 0) return 0
-    return ((agent.balance - agent.budget_cap) / agent.budget_cap) * 100
+    const budgetCap = agent.latest_run_budget_cap ?? agent.budget_cap
+    const realizedPnl = agent.latest_run_realized_pnl ?? agent.realized_pnl ?? 0
+    if (!budgetCap || budgetCap === 0) return 0
+    return (realizedPnl / budgetCap) * 100
   }
 
   const filteredAgents = agents.filter(agent =>

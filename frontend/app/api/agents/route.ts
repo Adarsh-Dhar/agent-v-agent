@@ -42,7 +42,39 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 400 })
     }
 
-    return NextResponse.json({ agents: data || [] }, { status: 200 })
+    // Enrich each agent with its latest agent_run data so the frontend can
+    // compute ROI from the per-run budget_cap (the agents table budget_cap is
+    // a global default that gets stale).
+    const agents = data || []
+    if (agents.length > 0) {
+      const agentIds = agents.map((a: any) => a.id)
+      const { data: runs } = await supabaseAdmin
+        .from('agent_runs')
+        .select('agent_id, budget_cap, realized_pnl, status')
+        .in('agent_id', agentIds)
+        .order('created_at', { ascending: false })
+
+      // Build a map: agent_id → latest run (first row since ordered desc)
+      const latestRunByAgent = new Map<string, any>()
+      if (runs) {
+        for (const run of runs) {
+          if (!latestRunByAgent.has(run.agent_id)) {
+            latestRunByAgent.set(run.agent_id, run)
+          }
+        }
+      }
+
+      for (const agent of agents) {
+        const latestRun = latestRunByAgent.get(agent.id)
+        if (latestRun) {
+          agent.latest_run_budget_cap = latestRun.budget_cap
+          agent.latest_run_realized_pnl = latestRun.realized_pnl
+          agent.latest_run_status = latestRun.status
+        }
+      }
+    }
+
+    return NextResponse.json({ agents }, { status: 200 })
   } catch (error) {
     console.error('[v0] Error in GET /api/agents:', error)
     return NextResponse.json(

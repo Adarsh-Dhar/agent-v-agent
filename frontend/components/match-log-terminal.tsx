@@ -115,7 +115,7 @@ function buildResultsTable(players: PlayerWithTrades[]) {
     const trades = p.trades || []
     const closed = trades.filter((t) => t.pnl !== null && t.pnl !== undefined)
     const wins = closed.filter((t) => (t.pnl ?? 0) > 0).length
-    const budgetCap = p.agent?.budget_cap ?? p.initial_purse ?? 1000
+    const budgetCap = p.agent?.budget_cap ?? p.initial_purse ?? 0.001
     const realizedPnl = p.agent?.realized_pnl ?? 0
     const finalBalance = p.agent?.balance ?? (budgetCap + realizedPnl + (p.agent?.unrealized_pnl ?? 0))
     const roi = budgetCap ? ((finalBalance - budgetCap) / budgetCap) * 100 : 0

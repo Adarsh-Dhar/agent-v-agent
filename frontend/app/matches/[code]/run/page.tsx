@@ -149,7 +149,7 @@ export default function MatchRunPage({ params }: { params: Promise<{ code: strin
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             match_id: matchIdForAgents,
-            budget_cap: player.purse ?? 1,
+            budget_cap: player.purse ?? 0.001,
           }),
         })
         const runData = await runResponse.json()
@@ -283,10 +283,10 @@ export default function MatchRunPage({ params }: { params: Promise<{ code: strin
           <div className="flex flex-wrap gap-3 pt-4 border-t border-border/30">
             {players.map((p: any) => {
               const agent = p.agent
-              const budgetCap = agent?.budget_cap ?? p.initial_purse ?? 1
+              const budgetCap = agent?.budget_cap ?? p.initial_purse ?? 0.001
               const realizedPnL = agent?.realized_pnl ?? 0
               const unrealizedPnL = agent?.unrealized_pnl ?? 0
-              const displayEquity = agent?.balance ?? p.purse ?? budgetCap
+              const displayEquity = (agent?.balance ?? p.purse ?? budgetCap) + unrealizedPnL
               return (
                 <div key={p.id} className="bg-background rounded-lg border border-border/30 px-4 py-2">
                   <span className="text-sm font-medium text-foreground">{p.player_name}</span>
@@ -344,7 +344,7 @@ export default function MatchRunPage({ params }: { params: Promise<{ code: strin
               {players.map((player: any) => {
                 const agent = player.agent
                 const trades = player.trades || []
-                const budgetCap = agent?.budget_cap ?? player.initial_purse ?? 1000
+                const budgetCap = agent?.budget_cap ?? player.initial_purse ?? 0.001
                 const realizedPnL = agent?.realized_pnl ?? 0
                 const unrealizedPnL = agent?.unrealized_pnl ?? 0
                 const currentBalance = agent?.balance ?? player.purse ?? budgetCap

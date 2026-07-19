@@ -371,7 +371,7 @@ export default function MatchLobbyPage({ params }: { params: Promise<{ code: str
                   <div className="mb-6 p-4 bg-gradient-to-r from-primary/10 to-secondary/10 rounded-lg border border-primary/20">
                     <div className="flex justify-between items-center mb-2">
                       <span className="text-xs text-muted-foreground uppercase tracking-wide">Purse</span>
-                      <span className="text-2xl font-bold gradient-text">${(player.purse ?? 1000).toLocaleString()}</span>
+                      <span className="text-2xl font-bold gradient-text">{(player.initial_purse ?? player.purse ?? 0.001).toLocaleString()} SOL</span>
                     </div>
                   </div>
                   {player.agent_name ? (

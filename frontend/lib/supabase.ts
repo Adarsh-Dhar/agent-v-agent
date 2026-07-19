@@ -69,6 +69,10 @@ export type Agent = {
   secondary_signal_type?: string
   secondary_signal_threshold?: number
   score_state_triggers?: string[]
+  // Enriched from latest agent_run (not on the agents table itself)
+  latest_run_budget_cap?: number
+  latest_run_realized_pnl?: number
+  latest_run_status?: string
 }
 
 export type Game = {

@@ -186,7 +186,7 @@ export default function CreateAgentPage() {
               sizing: {
                 type: preset.positionSizing,
                 percentage: 10,
-                fixed_stake: 100,
+                fixed_stake: 0.05,
                 confidence_weighted: preset.positionSizing === 'confidence_weighted',
               },
               exit: {

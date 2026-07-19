@@ -31,6 +31,42 @@ export async function PUT(
       )
     }
 
+    // Fetch the match_player to get the match_id
+    const { data: playerData, error: playerError } = await supabaseAdmin
+      .from('match_players')
+      .select('match_id')
+      .eq('id', id)
+      .single()
+
+    if (playerError || !playerData) {
+      return NextResponse.json(
+        { error: 'Player not found' },
+        { status: 404 }
+      )
+    }
+
+    // Fetch the match to check its status
+    const { data: matchData, error: matchError } = await supabaseAdmin
+      .from('matches')
+      .select('status')
+      .eq('id', playerData.match_id)
+      .single()
+
+    if (matchError || !matchData) {
+      return NextResponse.json(
+        { error: 'Match not found' },
+        { status: 404 }
+      )
+    }
+
+    // Only allow agent swaps when match is pending
+    if (matchData.status !== 'pending') {
+      return NextResponse.json(
+        { error: `Match is ${matchData.status} and agent swaps are no longer allowed` },
+        { status: 400 }
+      )
+    }
+
     const { data, error } = await supabaseAdmin
       .from('match_players')
       .update({

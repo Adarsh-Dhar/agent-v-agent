@@ -52,6 +52,13 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    if (matchData.status !== 'pending') {
+      return NextResponse.json(
+        { error: `Match is ${matchData.status} and can no longer be joined` },
+        { status: 400 }
+      )
+    }
+
     // Check if user is already a member
     const { data: existingPlayer } = await supabaseAdmin
       .from('match_players')
@@ -82,13 +89,16 @@ export async function POST(request: NextRequest) {
     }
 
     // Add user to the match as a player
+    const initialPurse = matchData.initial_purse || 0.001
     const { data: insertedData, error: insertError } = await supabaseAdmin
       .from('match_players')
       .insert({
         match_id: matchData.id,
         player_id: userIdCookie,
         player_name: userNameCookie,
-        purse: matchData.initial_purse || 1,
+        purse: initialPurse,
+        initial_purse: initialPurse,
+        pnl: 0,
       })
       .select()
 

@@ -61,7 +61,19 @@ function log(...args) {
 
 async function loadState() {
   const { data: run, error: runErr } = await supabase.from('agent_runs').select('*').eq('id', runId).single();
-  if (runErr) throw new Error(`Failed to load run ${runId}: ${runErr.message}`);
+  if (runErr) {
+    // PGRST116 = row not found (deleted by PATCH stop); PGRST121 = multiple rows returned
+    if (runErr.code === 'PGRST116' || runErr.code === 'PGRST121') {
+      log(`run row ${runErr.code === 'PGRST116' ? 'deleted' : 'duplicated'} — exiting cleanly.`);
+      process.exit(0);
+    }
+    throw new Error(`Failed to load run ${runId}: ${runErr.message}`);
+  }
+
+  if (run.status === 'stopped' || run.status === 'inactive') {
+    log(`status=${run.status}, shutting down.`);
+    process.exit(0);
+  }
 
   const { data: config, error: cfgErr } = await supabase.from('agents').select('*').eq('id', run.agent_id).single();
   if (cfgErr) throw new Error(`Failed to load agent ${run.agent_id}: ${cfgErr.message}`);
@@ -479,17 +491,14 @@ async function tick(agent) {
     lastTradeAt = Date.now();
     signalStreak = { action: null, count: 0 };
     const newTradeCount = (agent.trade_count ?? 0) + 1;
-    const newBalance = await getWalletBalanceSol(traderKeypair.publicKey);
 
-    log(`OPEN ${decision.action} stake=${stake.toFixed(4)} @odds=${snapshot.odds} balance=${newBalance.toFixed(4)} reason=${decision.reason} tx=${signature}`);
-    await recordTrade(agent, decision.action, snapshot.odds, stake, decision.reason, null, newBalance, signature, snapshot.minute);
-    await updateRun({ trade_count: newTradeCount, status: 'running', balance: newBalance });
+    log(`OPEN ${decision.action} stake=${stake.toFixed(4)} @odds=${snapshot.odds} balance=${agent.balance.toFixed(4)} reason=${decision.reason} tx=${signature}`);
+    await recordTrade(agent, decision.action, snapshot.odds, stake, decision.reason, null, agent.balance, signature, snapshot.minute);
+    await updateRun({ trade_count: newTradeCount, status: 'running' });
     await updateAgentMetrics(agent.agent_id, {
       trade_count: newTradeCount,
-      balance: newBalance,
     });
     agent.trade_count = newTradeCount;
-    agent.balance = newBalance;
   }
 }
 
@@ -509,13 +518,12 @@ async function main() {
   // equals the next unused nonce for this trader+market).
   nextTradeId = agent.trade_count ?? 0;
 
-  // Balance is real chain state now, not whatever the DB row says -- sync
-  // it once at startup so a restart doesn't reintroduce a phantom number.
-  let chainBalance = await getWalletBalanceSol(traderKeypair.publicKey);
-  agent.balance = chainBalance;
-  await updateRun({ balance: chainBalance });
-  await updateAgentMetrics(agent.agent_id, { balance: chainBalance });
-  log(`trader wallet=${traderKeypair.publicKey.toBase58()} balance=${chainBalance.toFixed(4)} SOL`);
+  // Balance is authoritative in the DB (set to budget_cap on run creation,
+  // only updated on CLOSE). Don't overwrite with chain wallet balance at
+  // startup — when a position is open, the wallet balance is lower than
+  // actual equity (SOL is locked in the position PDA).
+  const chainBalance = await getWalletBalanceSol(traderKeypair.publicKey);
+  log(`trader wallet=${traderKeypair.publicKey.toBase58()} wallet_balance=${chainBalance.toFixed(4)} SOL db_balance=${agent.balance}`);
 
   peakBalance = agent.balance;
 
@@ -523,9 +531,8 @@ async function main() {
 
   const interval = setInterval(async () => {
     try {
-      agent = await loadState(); // refresh in case budget/status changed externally
-      if (agent.status === 'stopped' || agent.status === 'inactive') {
-        log('status=stopped, shutting down.');
+      agent = await loadState(); // refresh in case budget/status changed externally (may process.exit)
+      if (!agent) {
         clearInterval(interval);
         process.exit(0);
       }
